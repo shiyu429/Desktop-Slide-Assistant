@@ -1,0 +1,8 @@
+/build/
+/releases/
+/archive/
+*.user
+*.suo
+*.log
+.DS_Store
+Thumbs.db
