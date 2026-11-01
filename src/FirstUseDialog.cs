@@ -71,7 +71,7 @@ namespace DesktopSwitcher
             var root=(Grid)XamlReader.Parse(@"<Grid xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' Margin='26' Background='White'>
               <StackPanel>
                 <TextBlock Text='让翻页随时就绪' FontSize='22' FontWeight='SemiBold' Foreground='#182A3C'/>
-                <TextBlock Text='是否允许桌面切屏/课件翻页助手在你登录 Windows 时自动启动？' FontSize='13' TextWrapping='Wrap' Foreground='#65778A' Margin='0,10,0,20'/>
+                <TextBlock Text='是否允许程序在你登录 Windows 时自动启动？' FontSize='13' TextWrapping='Wrap' Foreground='#65778A' Margin='0,10,0,20'/>
                 <Border Background='#F2F6FA' BorderBrush='#DCE5EE' BorderThickness='1' CornerRadius='12' Padding='18,16'>
                   <StackPanel><TextBlock Text='课件翻页' FontSize='17' FontWeight='SemiBold' Foreground='#21384F'/>
                     <TextBlock Text='仅在 PowerPoint / WPS 全屏放映时显示翻页按钮，平时保留托盘入口。' FontSize='13' TextWrapping='Wrap' Foreground='#65778A' Margin='0,8,0,0'/>
