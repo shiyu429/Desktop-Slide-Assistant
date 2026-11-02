@@ -1,7 +1,7 @@
 'use strict';
 const english = {
   skip:'Skip to content',brand:'Desktop & Slide Assistant',navFeatures:'Features & uses',hero1:'Switch desktops.',hero2:'Present with ease.',
-  lead:'Keep everyday actions within reach. Two little arrows for focused work and a smoother presentation.',download:'Download for Windows',try:'Try it below ↓',requirements:'Portable · Windows 10 / 11 · .NET Framework 4.8',
+  lead:'Keep everyday actions within reach. Two little arrows for focused work and a smoother presentation.',download:'Download for Windows',try:'Try it here →',requirements:'Portable · Windows 10 / 11 · .NET Framework 4.8',
   demoLabel:'A HANDS-ON PREVIEW',desktop:'Desktop switching',slides:'Slide navigation',demoHint:'Try the arrows',demoDisclaimer:'An interactive illustration. It does not control your desktop or slides.',
   ribbon1:'Two useful features. One small widget.',ribbon2:'Made for mice, touchscreens & whiteboards',featureTitle:'The right action, in the right place.',desktopTitle:'A desktop for every part of your day.',
   desktopBody:'Move left and right between adjacent Windows virtual desktops. At the last desktop, click right to create and enter a new one. Left at the first desktop stays put.',fits:'GOOD FOR',desktopUse:'Lesson prep & teaching · Multitasking · Work & personal spaces',
@@ -56,3 +56,15 @@ byId('slides-tab').addEventListener('click',()=>{mode='slides';renderDemo();});
 byId('prev').addEventListener('click',()=>{if(mode==='slides')slideIndex=Math.max(0,slideIndex-1);else desktopIndex=Math.max(0,desktopIndex-1);renderDemo();});
 byId('next').addEventListener('click',()=>{if(mode==='slides')slideIndex=Math.min(3,slideIndex+1);else{desktopIndex++;desktopCount=Math.max(desktopCount,desktopIndex+1);}renderDemo();});
 setLanguage(language);
+
+let highlightTimer;
+byId('try-demo').addEventListener('click',event=>{
+  event.preventDefault();
+  const demo=byId('playground');
+  demo.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'});
+  demo.classList.remove('is-highlighted');
+  void demo.offsetWidth;
+  demo.classList.add('is-highlighted');
+  clearTimeout(highlightTimer);
+  highlightTimer=setTimeout(()=>demo.classList.remove('is-highlighted'),2200);
+});
