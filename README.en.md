@@ -40,4 +40,4 @@ node .\tests\WebsiteCheck.mjs
 .\Package.ps1
 ```
 
-`src/` contains the app, `tests/` contains checks and fixtures, and `docs/` contains the static bilingual website and Chinese usage / release / verification notes. Local `build/`, `releases/` and `archive/` are excluded from Git. GitHub Pages serves `/docs` from `main`; no front-end build is needed.
+`src/` contains the app, `tests/` contains checks and fixtures, and `docs/` contains the static bilingual website. Local `build/`, `releases/` and `archive/` are excluded from Git. GitHub Pages serves `/docs` from `main`; no front-end build is needed.

@@ -2,7 +2,7 @@
 
 **两个箭头，让桌面切换和课件翻页更顺手。** Windows 便携悬浮工具，使用 C# / WPF / .NET Framework 4.8。
 
-[English](README.en.md) · [项目主页](https://shiyu429.github.io/Desktop-Slide-Assistant/) · [下载最新版](https://github.com/shiyu429/Desktop-Slide-Assistant/releases/latest) · [使用说明](docs/使用说明.md)
+[English](README.en.md) · [项目主页](https://shiyu429.github.io/Desktop-Slide-Assistant/) · [下载最新版](https://github.com/shiyu429/Desktop-Slide-Assistant/releases/latest)
 
 ![桌面切屏与课件翻页示意](docs/assets/overview.svg)
 
@@ -28,7 +28,7 @@
 2. 保留 `DesktopSwitcher.exe.config`，双击 `DesktopSwitcher.exe`。
 3. 选择“桌面切屏”或“课件翻页”。未放映时，课件翻页只保留托盘入口。
 
-需要 Windows 10 / 11 的虚拟桌面功能及 .NET Framework 4.8。不同 Office / WPS 版本的放映识别可能不同；详细验证范围见 [验证记录](docs/验证记录.md)。虚拟桌面登记格式变化或无法可靠判断位置时，会停止自动新建并提示。
+需要 Windows 10 / 11 的虚拟桌面功能及 .NET Framework 4.8。不同 Office / WPS 版本的放映识别可能不同。虚拟桌面登记格式变化或无法可靠判断位置时，会停止自动新建并提示。
 
 ## 构建
 
@@ -53,7 +53,7 @@ node .\tests\WebsiteCheck.mjs
 | --- | --- |
 | `src/` | 应用源码、图标、清单与运行配置 |
 | `tests/` | 功能检查、真实进程退出检查、测试课件 |
-| `docs/` | 中英双语静态主页、使用说明、更新和验证摘要 |
+| `docs/` | 中英双语静态主页 |
 | `Build.ps1` / `Package.ps1` | 构建及打包 |
 | `build/` / `releases/` / `archive/` | 本机构建、交付和历史归档，不提交到 Git |
 

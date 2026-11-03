@@ -1,7 +1,6 @@
 param([string]$OutputDirectory = 'build\app')
 $ErrorActionPreference = 'Stop'
 $sourceRoot = Join-Path $PSScriptRoot 'src'
-$docsRoot = Join-Path $PSScriptRoot 'docs'
 $compilerPath = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $compilerSignature = Get-AuthenticodeSignature -LiteralPath $compilerPath
 if ($compilerSignature.Status -ne 'Valid' -or $compilerSignature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation(?:,|$)') {
@@ -58,11 +57,6 @@ if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'tests\Tests.cs')) {
     ForEach-Object { Join-Path $sourceRoot $_ })
   & $compilerPath /nologo /target:exe /platform:anycpu /optimize+ /utf8output "/out:$testPath\Tests.exe" "/win32manifest:$sourceRoot\app.manifest" @references @testSources
   if ($LASTEXITCODE -ne 0) { throw '测试程序编译失败' }
-}
-foreach ($doc in @('使用说明.md','更新说明.md','验证记录.md')) {
-  if (Test-Path -LiteralPath (Join-Path $docsRoot $doc)) {
-    Copy-Item -LiteralPath (Join-Path $docsRoot $doc) -Destination $outputPath
-  }
 }
 $builtExe = Join-Path $outputPath 'DesktopSwitcher.exe'
 if (!(Test-Path -LiteralPath $builtExe)) { throw '新 EXE 已不可用，可能被安全软件处理；不自动重复构建。' }

@@ -14,12 +14,11 @@ New-Item -ItemType Directory -Path $releaseRoot,$qaRoot -Force | Out-Null
 $exePath = Join-Path $packageRoot 'DesktopSwitcher.exe'
 $portableZip = Join-Path $releaseRoot "DesktopSwitcher-portable-v$releaseVersion.zip"
 $sourceZip = Join-Path $releaseRoot "DesktopSwitcher-source-v$releaseVersion.zip"
-$docs = @('使用说明.md','更新说明.md','验证记录.md')
 if (!$SourceOnly) {
     if (!(Test-Path -LiteralPath $exePath)) { throw '交付程序不存在，未生成便携包。可用 -SourceOnly 仅交付源码。' }
     $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath).FileVersion
     if ($version -ne "$releaseVersion.0") { throw "交付版本不符：$version" }
-    foreach ($doc in $docs) {
+    foreach ($doc in @('使用说明.md','更新说明.md','验证记录.md')) {
         $staleDoc = Join-Path $packageRoot $doc
         if (Test-Path -LiteralPath $staleDoc) { Remove-Item -LiteralPath $staleDoc -Force }
     }
@@ -38,7 +37,6 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $sourceNames = @('README.md','README.en.md','.gitignore','Build.ps1','Package.ps1') +
     @('AssemblyInfo.cs','Program.cs','Lifetime.cs','Native.cs','DesktopState.cs','Settings.cs','CoursewareMode.cs','Docking.cs','DockMotion.cs','MenuDismissal.cs','FirstUseDialog.cs','SpotlightGuide.cs','WidgetWindow.cs','app.manifest','DesktopSwitcher.exe.config','DesktopSwitcher.ico' | ForEach-Object { "src/$_" }) +
     @('tests/Tests.cs','tests/WidgetFeatureTests.cs','tests/LifetimeTests.cs','tests/FullProductCheck.ps1','tests/fixtures/courseware-test.pptx','tests/fixtures/make_fixture.py') +
-    @($docs | ForEach-Object { "docs/$_" }) +
     @('docs/index.html','docs/style.css','docs/app.js','docs/.nojekyll','docs/assets/overview.svg','tests/WebsiteCheck.mjs')
 $sourceStream = [System.IO.File]::Create($sourceZip)
 $sourceArchive = [System.IO.Compression.ZipArchive]::new($sourceStream,[System.IO.Compression.ZipArchiveMode]::Create)
