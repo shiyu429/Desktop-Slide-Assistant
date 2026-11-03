@@ -19,15 +19,18 @@ if (!$SourceOnly) {
     if (!(Test-Path -LiteralPath $exePath)) { throw '交付程序不存在，未生成便携包。可用 -SourceOnly 仅交付源码。' }
     $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath).FileVersion
     if ($version -ne "$releaseVersion.0") { throw "交付版本不符：$version" }
-    foreach ($doc in $docs) { Copy-Item -LiteralPath (Project-Path "docs\$doc") -Destination $packageRoot }
+    foreach ($doc in $docs) {
+        $staleDoc = Join-Path $packageRoot $doc
+        if (Test-Path -LiteralPath $staleDoc) { Remove-Item -LiteralPath $staleDoc -Force }
+    }
     $buildInfo = Get-Content -LiteralPath (Join-Path $packageRoot 'build-info.json') -Raw | ConvertFrom-Json
     $fileHash = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash
     if ($buildInfo.Version -ne $version -or $buildInfo.Executable.SHA256 -ne $fileHash) { throw '构建清单与交付程序不符。' }
     foreach ($record in $buildInfo.Sources) {
         if ($record.SHA256 -ne (Get-FileHash -LiteralPath (Project-Path $record.Name) -Algorithm SHA256).Hash) { throw "源码已在构建后改变：$($record.Name)" }
     }
-    $portablePaths = @('DesktopSwitcher.exe','DesktopSwitcher.exe.config','build-info.json') + $docs |
-        ForEach-Object { Join-Path $packageRoot $_ }
+    $portableNames = @('DesktopSwitcher.exe','DesktopSwitcher.exe.config','build-info.json')
+    $portablePaths = $portableNames | ForEach-Object { Join-Path $packageRoot $_ }
     Compress-Archive -LiteralPath $portablePaths -DestinationPath $portableZip -Force
 }
 # Preserve source directory structure so extracting the archive gives a rebuildable project.
@@ -52,6 +55,8 @@ if ($SourceOnly) {
 }
 $zip = [System.IO.Compression.ZipFile]::OpenRead($portableZip)
 try {
+    $zipNames = @($zip.Entries | ForEach-Object { $_.FullName })
+    if (Compare-Object $zipNames $portableNames) { throw '便携包文件列表不符。' }
     $entry = $zip.GetEntry('DesktopSwitcher.exe')
     if ($null -eq $entry -or $entry.Length -lt 10000) { throw '便携包缺少有效程序。' }
     $sha = [System.Security.Cryptography.SHA256]::Create()
