@@ -1,6 +1,6 @@
-param([string]$OutputDirectory = 'releases\1.3.3\portable', [switch]$SourceOnly)
+param([string]$OutputDirectory = 'releases\1.4.1\portable', [switch]$SourceOnly)
 $ErrorActionPreference = 'Stop'
-$releaseVersion = '1.3.3'
+$releaseVersion = '1.4.1'
 $projectPrefix = $PSScriptRoot.TrimEnd('\')+'\'
 function Project-Path([string]$relative) {
     $path = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $relative))
@@ -35,7 +35,7 @@ if (!$SourceOnly) {
 # Preserve source directory structure so extracting the archive gives a rebuildable project.
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $sourceNames = @('README.md','README.en.md','.gitignore','Build.ps1','Package.ps1') +
-    @('AssemblyInfo.cs','Program.cs','Lifetime.cs','Native.cs','DesktopState.cs','Settings.cs','CoursewareMode.cs','Docking.cs','DockMotion.cs','MenuDismissal.cs','FirstUseDialog.cs','SpotlightGuide.cs','WidgetWindow.cs','app.manifest','DesktopSwitcher.exe.config','DesktopSwitcher.ico' | ForEach-Object { "src/$_" }) +
+    @('AssemblyInfo.cs','Program.cs','Lifetime.cs','Native.cs','DesktopState.cs','Settings.cs','CoursewareMode.cs','Docking.cs','DockMotion.cs','MenuDismissal.cs','FirstUseDialog.cs','SpotlightGuide.cs','WidgetMenu.cs','WidgetWindow.cs','app.manifest','DesktopSwitcher.exe.config','DesktopSwitcher.ico' | ForEach-Object { "src/$_" }) +
     @('tests/Tests.cs','tests/WidgetFeatureTests.cs','tests/LifetimeTests.cs','tests/FullProductCheck.ps1','tests/fixtures/courseware-test.pptx','tests/fixtures/make_fixture.py') +
     @('docs/index.html','docs/style.css','docs/app.js','docs/.nojekyll','docs/assets/overview.svg','tests/WebsiteCheck.mjs')
 $sourceStream = [System.IO.File]::Create($sourceZip)
