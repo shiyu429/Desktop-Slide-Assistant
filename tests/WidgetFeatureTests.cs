@@ -68,12 +68,19 @@ namespace DesktopSwitcher
             var screen=new Size(800,500); var card=new Size(240,100);
             foreach(var origin in new[] { new Point(0,0),new Point(0,400),new Point(696,0),new Point(696,400),new Point(330,230) }) {
                 var target=new Rect(origin,new Size(96,44)); var layout=GuideLayout.Calculate(screen,target,card);
-                check(new Rect(new Point(),screen).Contains(layout.Card)&&new Rect(new Point(),screen).Contains(layout.Hole),
-                    "spotlight card and highlight stay on screen at "+origin);
-                check(!layout.Mask(screen).FillContains(new Point(target.Left+48,target.Top+22)),"spotlight center has no dark mask at "+origin);
-                check(!layout.Hole.IntersectsWith(layout.Card),"spotlight text cannot cover paging buttons at "+origin);
-                check(origin.Y==0 ? !layout.CardAbove : layout.CardAbove,"spotlight card chooses available vertical space at "+origin);
+                check(new Rect(new Point(),screen).Contains(layout.Card),"spotlight card stays on screen at "+origin);
+                var mask=layout.Mask(screen);
+                check(!new[] { target.TopLeft,target.TopRight,target.BottomLeft,target.BottomRight }.Any(p=>mask.FillContains(p)),
+                    "rounded opening leaves the entire button rectangle unobstructed at "+origin);
+                check(!layout.Hole.IntersectsWith(layout.Card)&&!layout.Hole.IntersectsWith(layout.Stem.Bounds),
+                    "spotlight card and dotted connector stay clear of the buttons at "+origin);
+                check(origin.Y==0 ? layout.Card.Top>target.Bottom : layout.Card.Bottom<target.Top,
+                    "spotlight card chooses available vertical space at "+origin);
             }
+            var shortScreen=new Size(700,240);
+            var shortLayout=GuideLayout.Calculate(shortScreen,new Rect(302,98,96,44),card);
+            check(shortLayout.Card.Width==card.Width&&shortLayout.Card.Height==card.Height&&shortLayout.Card.Right<shortLayout.Hole.Left&&
+                !shortLayout.Stem.Bounds.IntersectsWith(shortLayout.Hole),"short screen moves the card and connector to the side without covering the widget");
             string settingsFile=System.IO.Path.Combine(System.IO.Path.GetDirectoryName(typeof(WidgetFeatureTests).Assembly.Location),"settings-features-"+Guid.NewGuid()+".xml");
             try {
                 var settings=new Settings { Mode=RunMode.Courseware,TransparentMode=true,Dock=DockSide.Right,EdgeAutoHide=false,
@@ -155,9 +162,9 @@ namespace DesktopSwitcher
 
             var welcome=FirstUseDialog.CreateContent();
             welcome.Measure(new Size(452,double.PositiveInfinity)); var size=new Size(452,Math.Ceiling(welcome.DesiredSize.Height));
-            check(welcome.FindName("ChooseDesktop") is Button&&welcome.FindName("ChooseCourseware") is Button,
-                "first-use view offers two explicit mode buttons");
-            Save(Render(welcome,size),"first-use-v1.3.3.png");
+            check(welcome.FindName("ChooseDesktop") is Button&&welcome.FindName("ChooseCourseware") is Button&&welcome.FindName("ChooseAutomatic") is Button,
+                "first-use view offers all three modes");
+            Save(Render(welcome,size),"first-use-v1.4.0.png");
             var consent=StartupConsentDialog.CreateContent();
             consent.Measure(new Size(452,double.PositiveInfinity));
             Save(Render(consent,new Size(452,Math.Ceiling(consent.DesiredSize.Height))),"startup-consent-v1.3.3.png");
@@ -174,6 +181,14 @@ namespace DesktopSwitcher
                 settings=Settings.Load(path);
                 check(!settings.SetupCompleted&&!settings.AutoHideEnabled&&settings.CurrentDock==DockSide.None&&settings.Dock==DockSide.Right,
                     "upgrading shows mode chooser once and avoids carrying desktop auto-hide into courseware");
+                settings.Mode=RunMode.Automatic;
+                check(!settings.AutoHideEnabled&&settings.CurrentDock==DockSide.None,"automatic mode starts with edge hiding disabled");
+                settings.AutoHideEnabled=true; settings.CurrentDock=DockSide.Left; settings.SuperTopmost=true;
+                settings.Save(path); settings=Settings.Load(path);
+                check(settings.Mode==RunMode.Automatic&&settings.AutoHideEnabled&&settings.CurrentDock==DockSide.Left&&settings.SuperTopmost,
+                    "automatic mode, its own dock preference and super topmost persist");
+                settings.Mode=RunMode.Courseware;
+                check(!settings.AutoHideEnabled&&settings.CurrentDock==DockSide.None,"automatic docking does not overwrite courseware docking");
             } finally { if(File.Exists(path)) File.Delete(path); }
         }
 
@@ -187,6 +202,13 @@ namespace DesktopSwitcher
             try {
                 widget.Start(); Pump(120); var handle=new WindowInteropHelper(widget).Handle;
                 check(!widget.IsVisible&&widget.Guide==null,"courseware startup stays hidden without showing first-use dialog during tests");
+                widget.OpenTrayMenu(); Pump(200); widget.Poll();
+                var trayItems=widget.TrayMenu.Items.OfType<MenuItem>().ToArray();
+                check(widget.TrayMenu.IsOpen&&trayItems.Any(m=>(string)m.Header=="恢复右下角位置")&&trayItems.Any(m=>(string)m.Header=="开机启动"),
+                    "tray menu opens with hidden widget and retains reset and startup options");
+                check(trayItems.Single(m=>(string)m.Header=="课件翻页").IsChecked,"tray menu shows selected mode");
+                Save(Capture(widget.TrayMenu),"tray-menu-v1.4.0.png");
+                widget.TrayMenu.IsOpen=false; Pump(50);
                 foreground=FakeShow(); widget.Poll(); check(!widget.IsVisible,"first show observation remains hidden");
                 widget.Poll(); Pump(150);
                 check(widget.IsVisible&&widget.Guide!=null&&widget.Guide.IsVisible,"confirmed show displays capsule and spotlight");
@@ -199,8 +221,11 @@ namespace DesktopSwitcher
                 var canvas=(Canvas)guide.Content; var mask=(Path)canvas.Children[0];
                 check(guide.Layout.Hole.Contains(center)&&!mask.Data.FillContains(center)&&canvas.InputHitTest(center)==null,
                     "spotlight hole aligns to capsule and leaves paging area unobstructed");
-                var message=((StackPanel)canvas.Children.OfType<Border>().Single().Child).Children.OfType<TextBlock>().Single();
-                check(message.Text=="在这里也可以翻页"&&guide.SuppressButton.Content.ToString()=="不再提醒","guide uses requested copy and suppression button");
+                var guideCard=canvas.Children.OfType<Border>().Single();
+                var message=((StackPanel)guideCard.Child).Children.OfType<TextBlock>().Single();
+                var pill=(Border)guide.SuppressButton.Template.FindName("Pill",guide.SuppressButton);
+                check(message.Text=="点击此处翻页"&&guide.SuppressButton.Content.ToString()=="不再提醒","guide uses requested copy and suppression button");
+                check(guideCard.CornerRadius.TopLeft>=18&&pill.CornerRadius.TopLeft>=10,"guide card and suppress button render rounded corners");
                 check(!guide.DismissAt(center,canvas)&&guide.IsVisible,"clicking highlighted capsule area does not dismiss guide");
                 SaveGuidePreview(widget,guide,host,guideRect,guideScale);
                 Pump(5400); widget.Poll();
@@ -229,23 +254,43 @@ namespace DesktopSwitcher
                 check(widget.IsVisible&&widget.CurrentMode==RunMode.Desktop&&!guide.IsVisible,"desktop selection displays capsule in any application");
                 Native.GetWindowRect(handle,out host);
                 check(host.Left+(int)Math.Round(8*scale)==area.Left,"desktop docking aligns visible capsule to physical left edge");
-                var menus=widget.ContextMenu.Items.OfType<MenuItem>().Select(m=>m.Header.ToString()).ToArray();
-                check(menus.Contains("透明沉浸")&&menus.Contains("桌面切屏")&&menus.Contains("课件翻页"),"menus expose immersive view and both modes");
+                var menuItems=widget.ContextMenu.Items.OfType<MenuItem>().ToArray();
+                var menus=menuItems.Select(m=>(string)m.Header).ToArray();
+                var more=menuItems.Single(m=>(string)m.Header=="更多功能");
+                check(menus.SequenceEqual(new[] { "桌面切屏","课件翻页","自动切换","更多功能","退出程序" })&&
+                    more.Items.OfType<MenuItem>().Select(m=>(string)m.Header).SequenceEqual(new[] { "透明沉浸","超级置顶","贴边自动隐藏" }),
+                    "widget menu exposes three modes and groups optional features; tray-only commands are absent");
+                check(capsule.Cursor==Cursors.Arrow&&((Rectangle)root.FindName("Divider")).Cursor==null&&((Button)root.FindName("LeftButton")).Cursor==Cursors.Hand,
+                    "drag surface uses normal arrow and paging button uses hand cursor");
 
                 widget.ContextMenu.PlacementTarget=widget; widget.ContextMenu.IsOpen=true; Pump(100);
                 check(widget.ContextMenu.IsOpen,"context menu remains open until selection or dismissal");
                 var source=PresentationSource.FromVisual(widget.ContextMenu) as HwndSource; Native.RECT menuBounds;
                 check(source!=null&&Native.GetWindowRect(source.Handle,out menuBounds),"context menu has measurable native bounds");
                 Native.GetWindowRect(source.Handle,out menuBounds);
+                var selected=menuItems[0];
+                var checkMark=(Border)selected.Template.FindName("Check",selected);
+                check(selected.IsChecked&&checkMark.ActualWidth>=20&&checkMark.ActualHeight>=20,"selected item has a full-size check badge");
+                Save(Capture(widget.ContextMenu),"widget-menu-v1.4.0.png");
+                more.IsSubmenuOpen=true; Pump(100);
+                var popup=(Popup)more.Template.FindName("PART_Popup",more);
+                var subSource=PresentationSource.FromVisual(popup.Child) as HwndSource;
+                check(popup.IsOpen&&subSource!=null,"more features opens a separate submenu popup");
+                Native.RECT subBounds; Native.GetWindowRect(subSource.Handle,out subBounds);
+                var subPoint=new Native.POINT { X=(subBounds.Left+subBounds.Right)/2,Y=(subBounds.Top+subBounds.Bottom)/2 };
+                check(WidgetMenu.ContainsPointer(widget.ContextMenu,subPoint),"submenu bounds count as inside the open menu");
+                widget.ObserveMenuPointer(subPoint,0,false); widget.ObserveMenuPointer(subPoint,1,false);
+                check(widget.ContextMenu.IsOpen,"inside click is not mistaken for outside dismissal");
+                Save(Capture((FrameworkElement)popup.Child),"more-menu-v1.4.0.png");
+                more.IsSubmenuOpen=false; Pump(70);
                 widget.ObserveMenuPointer(new Native.POINT { X=menuBounds.Left-30,Y=menuBounds.Top-30 },0,false);
                 widget.ObserveMenuPointer(new Native.POINT { X=menuBounds.Left-30,Y=menuBounds.Top-30 },1,false);
                 Pump(60);
                 check(!widget.ContextMenu.IsOpen,"outside click closes unselected context menu");
                 check(Mouse.Captured!=widget.ContextMenu,"closing context menu releases mouse capture");
                 widget.ContextMenu.IsOpen=true; Pump(80);
-                widget.ContextMenu.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,0,MouseButton.Left) {
-                    RoutedEvent=Mouse.PreviewMouseDownOutsideCapturedElementEvent });
-                check(!widget.ContextMenu.IsOpen,"WPF outside-capture event also dismisses context menu");
+                widget.ObserveMenuPointer(new Native.POINT(),0,true);
+                check(!widget.ContextMenu.IsOpen,"foreground application change dismisses context menu");
                 Pump(160);
 
                 widget.TickDock(long.MaxValue/2,false); Pump(60);
@@ -278,6 +323,30 @@ namespace DesktopSwitcher
                 check(settings.Dock==DockSide.Left&&after.Left+inset==area.Left,"actual edge contact activates docking");
                 foreground=new ShowWindow(); widget.ChangeMode(RunMode.Courseware,false); widget.Poll();
                 check(!widget.IsVisible&&!guide.IsVisible,"courseware selection outside a show hides capsule immediately");
+                widget.ChangeMode(RunMode.Automatic,false); widget.Poll();
+                check(widget.IsVisible&&!widget.IsPageMode&&!settings.AutoHideEnabled,"automatic mode displays desktop buttons and starts with docking disabled");
+                foreground=FakeShow(); widget.Poll();
+                check(widget.IsVisible&&!widget.IsPageMode,"automatic mode does not route the first observation as paging");
+                widget.Poll(); check(widget.IsVisible&&widget.IsPageMode&&((Button)root.FindName("RightButton")).ToolTip.Equals("下一页"),
+                    "automatic mode changes buttons to paging on confirmed full-screen slideshow");
+                foreground=new ShowWindow(); widget.Poll();
+                check(widget.IsVisible&&!widget.IsPageMode&&((Button)root.FindName("RightButton")).ToolTip.ToString().Contains("桌面"),
+                    "automatic mode restores desktop buttons without hiding when slideshow loses foreground");
+                var blocker=new Window { ShowActivated=false,Topmost=true,ShowInTaskbar=false,Width=200,Height=120,WindowStyle=WindowStyle.None };
+                try {
+                    blocker.Show(); Pump(60); var blockerHandle=new WindowInteropHelper(blocker).Handle;
+                    Native.GetWindowRect(handle,out host);
+                    Native.SetWindowPos(blockerHandle,new IntPtr(-1),host.Left,host.Top,200,120,0x0010);
+                    check(IsAbove(blockerHandle,handle),"ordinary topmost window can cover the normal widget");
+                    var beforeFocus=Native.GetForegroundWindow();
+                    var super=more.Items.OfType<MenuItem>().Single(m=>(string)m.Header=="超级置顶");
+                    super.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                    check(settings.SuperTopmost&&IsAbove(handle,blockerHandle),"super topmost command raises the widget above another topmost window");
+                    Native.RaiseOverlay(blockerHandle); widget.Poll();
+                    check(IsAbove(handle,blockerHandle)&&Native.GetForegroundWindow()==beforeFocus,"super topmost recovers its position without taking foreground focus");
+                    super.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Native.RaiseOverlay(blockerHandle); widget.Poll();
+                    check(!settings.SuperTopmost&&IsAbove(blockerHandle,handle),"turning off super topmost stops reasserting priority");
+                } finally { blocker.Close(); }
                 check(Native.GetForegroundWindow()!=handle&&Native.GetForegroundWindow()!=guideHandle,"self-owned display and animation never activate capsule or guide");
                 Console.WriteLine("Current DPI="+scale+"; guide stays until dismissed; no keyboard input sent.");
             } finally { widget.Close(); }
@@ -299,6 +368,13 @@ namespace DesktopSwitcher
                 Native.RECT after; Native.GetWindowRect(handle,out after);
                 check(!rightWidget.IsDockCollapsed&&Same(host,after),"right reveal animation retains native position and size");
             } finally { rightWidget.Close(); }
+        }
+        private static bool IsAbove(IntPtr upper,IntPtr lower)
+        {
+            int visited=0;
+            for(var next=Native.GetWindow(lower,3);next!=IntPtr.Zero&&visited++<128;next=Native.GetWindow(next,3))
+                if(next==upper) return true;
+            return false;
         }
         private static ShowWindow FakeShow()
         {
@@ -333,7 +409,13 @@ namespace DesktopSwitcher
                 draw.DrawImage(guideImage,new Rect(size));
             }
             var bitmap=new RenderTargetBitmap((int)Math.Ceiling(size.Width),(int)Math.Ceiling(size.Height),96,96,PixelFormats.Pbgra32);
-            bitmap.Render(visual); Save(bitmap,"spotlight-v1.3.1.png");
+            bitmap.Render(visual);
+            var focus=Rect.Union(guide.Layout.Card,guide.Layout.Hole);
+            focus.Inflate(28,28);
+            focus.Intersect(new Rect(size));
+            int x=(int)Math.Floor(focus.Left),y=(int)Math.Floor(focus.Top);
+            var crop=new Int32Rect(x,y,(int)Math.Ceiling(focus.Right)-x,(int)Math.Ceiling(focus.Bottom)-y);
+            Save(new CroppedBitmap(bitmap,crop),"spotlight-v1.4.1.png");
         }
         private static RenderTargetBitmap Capture(FrameworkElement element)
         {
@@ -342,7 +424,7 @@ namespace DesktopSwitcher
             var bitmap=new RenderTargetBitmap((int)Math.Ceiling(element.ActualWidth),(int)Math.Ceiling(element.ActualHeight),96,96,PixelFormats.Pbgra32);
             bitmap.Render(element); return bitmap;
         }
-        private static void Save(RenderTargetBitmap bitmap,string name)
+        private static void Save(BitmapSource bitmap,string name)
         {
             if(name.StartsWith("first-use-")||name.StartsWith("widget-immersive-")) {
                 var visual=new DrawingVisual();
