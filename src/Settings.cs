@@ -5,7 +5,7 @@ using Microsoft.Win32;
 
 namespace DesktopSwitcher
 {
-    public enum RunMode { Desktop, Courseware }
+    public enum RunMode { Desktop, Courseware, Automatic }
     public enum DockSide { None, Left, Right }
     public sealed class Settings
     {
@@ -14,18 +14,21 @@ namespace DesktopSwitcher
         public bool SuppressCoursewareTips=false;
         public RunMode Mode=RunMode.Desktop;
         public bool TransparentMode=false;
+        public bool SuperTopmost=false;
         public bool EdgeAutoHide=true;
         public DockSide Dock=DockSide.None;
         public bool CoursewareEdgeAutoHide=false;
         public DockSide CoursewareDock=DockSide.None;
+        public bool AutomaticEdgeAutoHide=false;
+        public DockSide AutomaticDock=DockSide.None;
         public bool SetupCompleted=false;
         public bool CoursewareStartupAsked=false;
         internal bool AutoHideEnabled
-        { get { return Mode==RunMode.Courseware ? CoursewareEdgeAutoHide : EdgeAutoHide; }
-          set { if(Mode==RunMode.Courseware) CoursewareEdgeAutoHide=value; else EdgeAutoHide=value; } }
+        { get { return Mode==RunMode.Automatic ? AutomaticEdgeAutoHide : Mode==RunMode.Courseware ? CoursewareEdgeAutoHide : EdgeAutoHide; }
+          set { if(Mode==RunMode.Automatic) AutomaticEdgeAutoHide=value; else if(Mode==RunMode.Courseware) CoursewareEdgeAutoHide=value; else EdgeAutoHide=value; } }
         internal DockSide CurrentDock
-        { get { return Mode==RunMode.Courseware ? CoursewareDock : Dock; }
-          set { if(Mode==RunMode.Courseware) CoursewareDock=value; else Dock=value; } }
+        { get { return Mode==RunMode.Automatic ? AutomaticDock : Mode==RunMode.Courseware ? CoursewareDock : Dock; }
+          set { if(Mode==RunMode.Automatic) AutomaticDock=value; else if(Mode==RunMode.Courseware) CoursewareDock=value; else Dock=value; } }
         public string Monitor="";
         public double OffsetX, OffsetY;
         private static string directoryOverride;

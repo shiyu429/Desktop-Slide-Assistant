@@ -36,6 +36,7 @@ namespace DesktopSwitcher
         [DllImport("user32.dll")] internal static extern IntPtr GetShellWindow();
         [DllImport("user32.dll")] internal static extern bool GetCursorPos(out POINT point);
         [DllImport("user32.dll")] internal static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+        [DllImport("user32.dll")] internal static extern IntPtr GetWindow(IntPtr hwnd,uint command);
         [DllImport("user32.dll")] internal static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
         [DllImport("user32.dll", EntryPoint="GetWindowLongW")] internal static extern int GetWindowLong(IntPtr hwnd, int index);
         [DllImport("user32.dll", EntryPoint="SetWindowLongW")] internal static extern int SetWindowLong(IntPtr hwnd, int index, int value);
@@ -73,6 +74,23 @@ namespace DesktopSwitcher
             foreach (int key in new[] { 0x10, 0x11, 0x12, 0x5B, 0x5C })
                 if ((GetAsyncKeyState(key) & 0x8000)!=0) return true;
             return false;
+        }
+        internal static void RaiseOverlay(IntPtr hwnd)
+        { SetWindowPos(hwnd,new IntPtr(-1),0,0,0,0,0x0213); } // Keep size, position, activation and owner order.
+        internal static void KeepOverlayAboveWindows(IntPtr hwnd,IntPtr ownedGuide)
+        {
+            RECT host;
+            if(!GetWindowRect(hwnd,out host)) return;
+            // Only reorder when a visible topmost window above the widget actually overlaps it.
+            const uint previousWindow=3;
+            int visited=0;
+            for(var window=GetWindow(hwnd,previousWindow);window!=IntPtr.Zero&&visited++<128;window=GetWindow(window,previousWindow)) {
+                if(window==ownedGuide||(GetWindowLong(window,-20)&8)==0||!IsWindowVisible(window)||IsIconic(window)) continue;
+                RECT other; int cloaked;
+                if(!GetWindowRect(window,out other)||other.Right<=host.Left||other.Left>=host.Right||other.Bottom<=host.Top||other.Top>=host.Bottom) continue;
+                if(DwmGetWindowAttribute(window,14,out cloaked,4)==0&&cloaked!=0) continue;
+                RaiseOverlay(hwnd); return;
+            }
         }
         internal static INPUT Key(ushort key, bool up)
         {

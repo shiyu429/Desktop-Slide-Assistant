@@ -45,7 +45,7 @@ $references = @('System.dll','System.Core.dll','System.Xml.dll','System.Xaml.dll
   ForEach-Object { '/reference:' + (Join-Path $frameworkPath $_) }
 $references += @('WindowsBase.dll','PresentationCore.dll','PresentationFramework.dll') |
   ForEach-Object { '/reference:' + (Join-Path $wpfPath $_) }
-$sourcePaths = @('AssemblyInfo.cs','Program.cs','Lifetime.cs','Native.cs','DesktopState.cs','Settings.cs','CoursewareMode.cs','Docking.cs','DockMotion.cs','MenuDismissal.cs','FirstUseDialog.cs','SpotlightGuide.cs','WidgetWindow.cs') |
+$sourcePaths = @('AssemblyInfo.cs','Program.cs','Lifetime.cs','Native.cs','DesktopState.cs','Settings.cs','CoursewareMode.cs','Docking.cs','DockMotion.cs','MenuDismissal.cs','FirstUseDialog.cs','SpotlightGuide.cs','WidgetMenu.cs','WidgetWindow.cs') |
   ForEach-Object { Join-Path $sourceRoot $_ }
 & $compilerPath /nologo /target:winexe /platform:anycpu /optimize+ /utf8output "/out:$outputPath\DesktopSwitcher.exe" "/win32manifest:$sourceRoot\app.manifest" "/win32icon:$iconPath" @references @sourcePaths
 if ($LASTEXITCODE -ne 0) { throw '编译失败' }
@@ -53,7 +53,7 @@ Copy-Item -LiteralPath (Join-Path $sourceRoot 'DesktopSwitcher.exe.config') -Des
 if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'tests\Tests.cs')) {
   $testPath = Join-Path $PSScriptRoot 'build\qa'
   New-Item -ItemType Directory -Path $testPath -Force | Out-Null
-  $testSources = @('Tests.cs','WidgetFeatureTests.cs','LifetimeTests.cs' | ForEach-Object { Join-Path $PSScriptRoot "tests\$_" }) + @('Lifetime.cs','Native.cs','DesktopState.cs','Settings.cs','CoursewareMode.cs','Docking.cs','DockMotion.cs','MenuDismissal.cs','FirstUseDialog.cs','SpotlightGuide.cs','WidgetWindow.cs' |
+  $testSources = @('Tests.cs','WidgetFeatureTests.cs','LifetimeTests.cs' | ForEach-Object { Join-Path $PSScriptRoot "tests\$_" }) + @('Lifetime.cs','Native.cs','DesktopState.cs','Settings.cs','CoursewareMode.cs','Docking.cs','DockMotion.cs','MenuDismissal.cs','FirstUseDialog.cs','SpotlightGuide.cs','WidgetMenu.cs','WidgetWindow.cs' |
     ForEach-Object { Join-Path $sourceRoot $_ })
   & $compilerPath /nologo /target:exe /platform:anycpu /optimize+ /utf8output "/out:$testPath\Tests.exe" "/win32manifest:$sourceRoot\app.manifest" @references @testSources
   if ($LASTEXITCODE -ne 0) { throw '测试程序编译失败' }

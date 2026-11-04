@@ -1,4 +1,4 @@
-param([string]$Version='1.3.3')
+param([string]$Version='1.4.1')
 $ErrorActionPreference='Stop'
 $projectPath=Split-Path -Parent $PSScriptRoot
 $projectPath=(Resolve-Path -LiteralPath $projectPath).Path
@@ -21,7 +21,7 @@ public static class DesktopSwitcherThreadProbe {
  [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr handle);
 }
 '@
-foreach($case in @('Desktop','Courseware','BlockedUI')) {
+foreach($case in @('Desktop','Courseware','Automatic','BlockedUI')) {
   $directory=Join-Path $root $case
   $profile=Join-Path $directory 'profile'
   New-Item -ItemType Directory -Path $profile -Force | Out-Null
@@ -29,7 +29,7 @@ foreach($case in @('Desktop','Courseware','BlockedUI')) {
   Copy-Item -LiteralPath $sourceExe -Destination $exe
   Copy-Item -LiteralPath (Join-Path $releasePath 'DesktopSwitcher.exe.config') -Destination $directory
   if((Get-FileHash -LiteralPath $exe).Hash -ne $sourceHash) { throw '测试副本与交付 EXE 不同' }
-  $mode=if($case -eq 'Desktop') {'Desktop'} else {'Courseware'}
+  $mode=if($case -eq 'BlockedUI') {'Courseware'} else {$case}
   "<Settings><Mode>$mode</Mode><SetupCompleted>true</SetupCompleted><CoursewareStartupAsked>true</CoursewareStartupAsked><SuppressCoursewareTips>true</SuppressCoursewareTips><DefaultPosition>true</DefaultPosition></Settings>" |
     Set-Content -LiteralPath (Join-Path $profile 'settings.xml') -Encoding UTF8
   foreach($round in 1..2) {
