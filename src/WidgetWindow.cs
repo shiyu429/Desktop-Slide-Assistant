@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Markup;
@@ -28,12 +29,14 @@ namespace DesktopSwitcher
         private readonly DockMotion motion;
         private readonly MenuDismissal menuDismissal=new MenuDismissal();
         private readonly DispatcherTimer menuTimer=new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(30) };
+        private ContextMenu openMenu;
         private IntPtr menuForeground;
         private readonly DispatcherTimer timer=new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(150) };
         private readonly Button left,right;
         private readonly Border capsule,edgeTab;
         private readonly Path leftArrow,rightArrow;
         private readonly Forms.NotifyIcon tray;
+        private readonly ContextMenu trayMenu;
         private readonly System.Drawing.Icon ownedIcon;
         private readonly bool testing;
         private readonly CancellationTokenSource shutdown=new CancellationTokenSource();
@@ -44,6 +47,8 @@ namespace DesktopSwitcher
         private Native.POINT dragStart;
         private Native.RECT dragRect;
         private Button dragButton;
+        private int dragGeneration;
+        private RunMode dragMode;
         private DateTime lastFollowError=DateTime.MinValue,lastPositionCheck=DateTime.MinValue,nextPageClick=DateTime.MinValue;
         private string layout="",lastStatus="";
         private int visualGeneration=-1;
@@ -75,20 +80,20 @@ namespace DesktopSwitcher
               </ControlTemplate></Setter.Value></Setter>
             </Style>
           </Grid.Resources>
-          <Border x:Name='Capsule' Width='96' Height='44' HorizontalAlignment='Right' VerticalAlignment='Bottom' Margin='8' Background='#A82B3038' BorderBrush='#38FFFFFF' BorderThickness='1' CornerRadius='16'>
+          <Border x:Name='Capsule' Width='96' Height='44' HorizontalAlignment='Right' VerticalAlignment='Bottom' Margin='8' Background='#A82B3038' BorderBrush='#38FFFFFF' BorderThickness='1' CornerRadius='16' Cursor='Arrow'>
             <Border.Effect><DropShadowEffect BlurRadius='10' ShadowDepth='2' Opacity='0.22'/></Border.Effect>
             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width='43'/><ColumnDefinition Width='8'/><ColumnDefinition Width='43'/></Grid.ColumnDefinitions>
               <Button x:Name='LeftButton' Grid.Column='0' AutomationProperties.Name='左侧桌面' ToolTip='切换到左侧桌面'>
                 <Path x:Name='LeftArrow' Data='M 11,1 L 3,9 L 11,17' Stroke='#FFF4F6FA' StrokeThickness='1.8' StrokeStartLineCap='Round' StrokeEndLineCap='Round' StrokeLineJoin='Round' Width='14' Height='18'/>
               </Button>
-              <Rectangle x:Name='Divider' Grid.Column='1' Width='1' Height='16' Fill='#28FFFFFF' Cursor='SizeAll'/>
+              <Rectangle x:Name='Divider' Grid.Column='1' Width='1' Height='16' Fill='#28FFFFFF'/>
               <Button x:Name='RightButton' Grid.Column='2' AutomationProperties.Name='右侧桌面或新建' ToolTip='切换到右侧桌面；到末尾时新建'>
                 <Path x:Name='RightArrow' Data='M 3,1 L 11,9 L 3,17' Stroke='#FFF4F6FA' StrokeThickness='1.8' StrokeStartLineCap='Round' StrokeEndLineCap='Round' StrokeLineJoin='Round' Width='14' Height='18'/>
               </Button>
             </Grid>
           </Border>
           <Border x:Name='EdgeTab' Width='6' Height='32' Visibility='Hidden' VerticalAlignment='Center' HorizontalAlignment='Left'
-             Background='#C06C91B7' BorderBrush='#80D2E7FF' BorderThickness='1' CornerRadius='0,4,4,0' Cursor='Hand' ToolTip='移入展开，右键打开菜单'/>
+             Background='#C06C91B7' BorderBrush='#80D2E7FF' BorderThickness='1' CornerRadius='0,4,4,0' Cursor='Arrow' ToolTip='移入展开，右键打开菜单'/>
         </Grid>";
 
         internal static Grid CreateContent() { return (Grid)XamlReader.Parse(WidgetXaml); }
@@ -120,19 +125,12 @@ namespace DesktopSwitcher
             edgeTab.MouseEnter+=(s,e)=>ExpandDock();
             edgeTab.MouseLeftButtonDown+=(s,e)=>{ ExpandDock(); e.Handled=true; };
             capsule.MouseEnter+=(s,e)=>UpdateAppearance(); capsule.MouseLeave+=(s,e)=>UpdateAppearance();
-            ContextMenu=CreateMenu();
-            ContextMenu.StaysOpen=false;
-            ContextMenu.Opened+=(s,e)=>{
-                ExpandDock(); menuForeground=Native.GetForegroundWindow();
-                menuDismissal.Open(MouseButtons());
-                Mouse.Capture(ContextMenu,CaptureMode.SubTree); menuTimer.Start();
-            };
-            Mouse.AddPreviewMouseDownOutsideCapturedElementHandler(ContextMenu,(s,e)=>CloseMenu());
-            ContextMenu.Closed+=(s,e)=>{ menuTimer.Stop(); ExpandDock(); };
+            ContextMenu=CreateMenu(false);
+            trayMenu=CreateMenu(true);
             menuTimer.Tick+=(s,e)=>ObserveMenu();
             ownedIcon=System.Drawing.Icon.ExtractAssociatedIcon(Settings.ExecutablePath)??(System.Drawing.Icon)System.Drawing.SystemIcons.Application.Clone();
             tray=new Forms.NotifyIcon { Text="桌面切屏/课件翻页助手",Visible=!test,Icon=ownedIcon };
-            tray.ContextMenuStrip=CreateTrayMenu();
+            tray.MouseUp+=(s,e)=>{ if(e.Button==Forms.MouseButtons.Right) Dispatcher.BeginInvoke(new Action(OpenTrayMenu)); };
             tray.DoubleClick+=(s,e)=>Dispatcher.BeginInvoke(new Action(ResetPosition));
             SourceInitialized+=InitializeWindow;
             SizeChanged+=(s,e)=>{ if(started&&!dragging&&!positioning) ApplyPosition(); };
@@ -146,6 +144,8 @@ namespace DesktopSwitcher
             ApplyDockVisual(false);
         }
         internal RunMode CurrentMode { get { return settings.Mode; } }
+        internal bool IsPageMode { get { return settings.Mode!=RunMode.Desktop&&courseware.Active; } }
+        internal ContextMenu TrayMenu { get { return trayMenu; } }
         internal bool IsDockCollapsed { get { return docking.Collapsed; } }
         internal SpotlightGuide Guide { get { return guide; } }
         internal bool IsExiting { get { return closing; } }
@@ -155,55 +155,53 @@ namespace DesktopSwitcher
             started=true; new WindowInteropHelper(this).EnsureHandle();
             ApplyPosition(); Poll(); if(!testing) timer.Start();
         }
-        private ContextMenu CreateMenu()
+        private ContextMenu CreateMenu(bool fromTray)
         {
-            var menu=new ContextMenu();
-            var desktop=new MenuItem { Header="桌面切屏",IsCheckable=true };
-            var slides=new MenuItem { Header="课件翻页",IsCheckable=true };
-            desktop.Click+=(s,e)=>ChangeMode(RunMode.Desktop,true);
-            slides.Click+=(s,e)=>ChangeMode(RunMode.Courseware,true);
-            var transparent=new MenuItem { Header="透明沉浸",IsCheckable=true };
-            transparent.Click+=(s,e)=>ChangeTransparency(!settings.TransparentMode,true);
-            var dock=new MenuItem { Header="贴边自动隐藏",IsCheckable=true };
-            dock.Click+=(s,e)=>ChangeAutoHide(!settings.AutoHideEnabled);
-            var reset=new MenuItem { Header="恢复右下角位置" }; reset.Click+=(s,e)=>ResetPosition();
-            var startup=new MenuItem { Header="开机启动",IsCheckable=true }; startup.Click+=(s,e)=>ToggleStartup();
-            var exit=new MenuItem { Header="退出程序" }; exit.Click+=(s,e)=>Exit();
-            menu.Items.Add(desktop); menu.Items.Add(slides); menu.Items.Add(new Separator());
-            menu.Items.Add(transparent); menu.Items.Add(dock); menu.Items.Add(reset); menu.Items.Add(startup);
-            menu.Items.Add(new Separator()); menu.Items.Add(exit);
+            var menu=WidgetMenu.Create();
+            menu.Items.Add(WidgetMenu.Item("桌面切屏","M 1,2 H 13 V 10 H 1 Z M 7,10 V 13 M 4,13 H 10",
+                ()=>ChangeMode(RunMode.Desktop,true),()=>settings.Mode==RunMode.Desktop));
+            menu.Items.Add(WidgetMenu.Item("课件翻页","M 1,2 H 13 V 10 H 1 Z M 7,10 L 4,13 M 7,10 L 10,13 M 6,4 L 9,6 L 6,8 Z",
+                ()=>ChangeMode(RunMode.Courseware,true),()=>settings.Mode==RunMode.Courseware));
+            menu.Items.Add(WidgetMenu.Item("自动切换","M 1,4 H 12 M 9,1 L 12,4 L 9,7 M 13,10 H 2 M 5,7 L 2,10 L 5,13",
+                ()=>ChangeMode(RunMode.Automatic,true),()=>settings.Mode==RunMode.Automatic));
+            menu.Items.Add(new Separator());
+            var more=WidgetMenu.Item("更多功能","M 1,3 H 13 M 1,7 H 13 M 1,11 H 13 M 4,1 V 5 M 10,5 V 9 M 6,9 V 13");
+            more.Items.Add(WidgetMenu.Item("透明沉浸","M 1,7 C 4,1 10,1 13,7 C 10,13 4,13 1,7 Z M 9,7 A 2,2 0 1 1 5,7 A 2,2 0 1 1 9,7",
+                ()=>ChangeTransparency(!settings.TransparentMode,true),()=>settings.TransparentMode));
+            more.Items.Add(WidgetMenu.Item("超级置顶","M 2,2 H 12 M 3,8 L 7,4 L 11,8 M 7,4 V 13",
+                ()=>ChangeSuperTopmost(!settings.SuperTopmost),()=>settings.SuperTopmost));
+            more.Items.Add(WidgetMenu.Item("贴边自动隐藏","M 2,1 V 13 M 5,7 H 13 M 8,4 L 5,7 L 8,10",
+                ()=>ChangeAutoHide(!settings.AutoHideEnabled),()=>settings.AutoHideEnabled));
+            menu.Items.Add(more);
+            if(fromTray) {
+                menu.Placement=PlacementMode.MousePoint;
+                menu.Items.Add(WidgetMenu.Item("恢复右下角位置","M 12,6 A 5,5 0 1 0 10,11 M 12,2 V 6 H 8",ResetPosition));
+                menu.Items.Add(WidgetMenu.Item("开机启动","M 7,1 V 7 M 4,3 A 5,5 0 1 0 10,3",ToggleStartup,StartupEnabled));
+            }
+            menu.Items.Add(new Separator());
+            menu.Items.Add(WidgetMenu.Item("退出程序","M 7,2 H 2 V 12 H 7 M 6,7 H 13 M 10,4 L 13,7 L 10,10",RequestExit));
             menu.Opened+=(s,e)=>{
-                desktop.IsChecked=settings.Mode==RunMode.Desktop; slides.IsChecked=settings.Mode==RunMode.Courseware;
-                transparent.IsChecked=settings.TransparentMode; dock.IsChecked=settings.AutoHideEnabled;
-                try { startup.IsChecked=Settings.AutoStart; } catch { startup.IsChecked=false; }
+                if(closing) { menu.IsOpen=false; return; }
+                if(openMenu!=null&&openMenu!=menu) CloseMenu();
+                openMenu=menu; WidgetMenu.Refresh(menu); ExpandDock();
+                menuForeground=Native.GetForegroundWindow(); menuDismissal.Open(MouseButtons()); menuTimer.Start();
+            };
+            Mouse.AddPreviewMouseDownOutsideCapturedElementHandler(menu,(s,e)=>{
+                Native.POINT cursor;
+                if(!Native.GetCursorPos(out cursor)||!WidgetMenu.ContainsPointer(menu,cursor)) CloseMenu();
+            });
+            menu.Closed+=(s,e)=>{
+                if(openMenu==menu) { openMenu=null; menuTimer.Stop(); }
+                ExpandDock();
             };
             return menu;
         }
-        private Forms.ContextMenuStrip CreateTrayMenu()
+        private static bool StartupEnabled()
+        { try { return Settings.AutoStart; } catch { return false; } }
+        internal void OpenTrayMenu()
         {
-            var menu=new Forms.ContextMenuStrip();
-            var desktop=new Forms.ToolStripMenuItem("桌面切屏");
-            var slides=new Forms.ToolStripMenuItem("课件翻页");
-            desktop.Click+=(s,e)=>Dispatcher.BeginInvoke(new Action(()=>ChangeMode(RunMode.Desktop,true)));
-            slides.Click+=(s,e)=>Dispatcher.BeginInvoke(new Action(()=>ChangeMode(RunMode.Courseware,true)));
-            var transparent=new Forms.ToolStripMenuItem("透明沉浸");
-            transparent.Click+=(s,e)=>Dispatcher.BeginInvoke(new Action(()=>ChangeTransparency(!settings.TransparentMode,true)));
-            var dock=new Forms.ToolStripMenuItem("贴边自动隐藏");
-            dock.Click+=(s,e)=>Dispatcher.BeginInvoke(new Action(()=>ChangeAutoHide(!settings.AutoHideEnabled)));
-            var startup=new Forms.ToolStripMenuItem("开机启动");
-            startup.Click+=(s,e)=>Dispatcher.BeginInvoke(new Action(ToggleStartup));
-            menu.Items.Add(desktop); menu.Items.Add(slides); menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add(transparent); menu.Items.Add(dock);
-            menu.Items.Add("恢复右下角位置",null,(s,e)=>Dispatcher.BeginInvoke(new Action(ResetPosition)));
-            menu.Items.Add(startup); menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add("退出程序",null,(s,e)=>Dispatcher.BeginInvoke(new Action(Exit)));
-            menu.Opening+=(s,e)=>{
-                desktop.Checked=settings.Mode==RunMode.Desktop; slides.Checked=settings.Mode==RunMode.Courseware;
-                transparent.Checked=settings.TransparentMode; dock.Checked=settings.AutoHideEnabled;
-                try { startup.Checked=Settings.AutoStart; } catch { startup.Checked=false; }
-            };
-            menu.Closed+=(s,e)=>docking.Expand(Now);
-            return menu;
+            if(closing) return;
+            CloseMenu(); trayMenu.IsOpen=true;
         }
         internal void ChangeMode(RunMode value,bool persist)
         {
@@ -211,7 +209,7 @@ namespace DesktopSwitcher
             RunMode previous=settings.Mode; settings.Mode=value;
             if(persist&&!SaveSettings()) { settings.Mode=previous; return; }
             if(persist&&!testing&&value==RunMode.Courseware) { StartupConsent.Request(settings,this); SaveSettings(); }
-            courseware.SetDisabled(value==RunMode.Desktop);
+            courseware.Reset(value==RunMode.Desktop);
             visualGeneration=-1; lastStatus="";
             if(guide!=null) guide.Hide();
             docking.SetSide(settings.AutoHideEnabled ? settings.CurrentDock : DockSide.None,Now);
@@ -222,6 +220,12 @@ namespace DesktopSwitcher
             bool previous=settings.TransparentMode; settings.TransparentMode=value;
             if(persist&&!SaveSettings()) { settings.TransparentMode=previous; return; }
             UpdateAppearance();
+        }
+        private void ChangeSuperTopmost(bool value)
+        {
+            bool previous=settings.SuperTopmost; settings.SuperTopmost=value;
+            if(!SaveSettings()) { settings.SuperTopmost=previous; return; }
+            if(value&&IsVisible) Native.RaiseOverlay(hwnd);
         }
         private void ChangeAutoHide(bool value)
         {
@@ -257,7 +261,7 @@ namespace DesktopSwitcher
         private ShowWindow ObserveForeground()
         {
             var foreground=ReadForeground();
-            if(foregroundReader==null&&courseware.Active&&(statusOpen||ContextMenu.IsOpen||tray.ContextMenuStrip.Visible)) {
+            if(foregroundReader==null&&courseware.Active&&(statusOpen||openMenu!=null)) {
                 uint pid; Native.GetWindowThreadProcessId(Native.GetForegroundWindow(),out pid);
                 if(pid==(uint)Process.GetCurrentProcess().Id) return showReader.Read(courseware.Target.Handle);
             }
@@ -266,15 +270,17 @@ namespace DesktopSwitcher
         internal void Poll()
         {
             if(closing||hwnd==IntPtr.Zero) return;
-            courseware.Observe(settings.Mode==RunMode.Courseware ? ObserveForeground() : null);
+            courseware.Observe(settings.Mode!=RunMode.Desktop ? ObserveForeground() : null);
             UpdateModeVisual();
-            if(settings.Mode==RunMode.Desktop&&!testing) RefreshDesktop();
+            if(settings.Mode!=RunMode.Courseware&&!IsPageMode&&!testing) RefreshDesktop();
             if(!dragging&&(DateTime.UtcNow-lastPositionCheck).TotalSeconds>=2) {
                 lastPositionCheck=DateTime.UtcNow;
                 string current=string.Join(";",Forms.Screen.AllScreens.Select(s=>s.DeviceName+s.WorkingArea.ToString()+Native.MonitorScale(s)));
                 if(current!=layout) { layout=current; ApplyPosition(); }
             }
             UpdateDock();
+            if(settings.SuperTopmost&&IsVisible&&openMenu==null&&!statusOpen)
+                Native.KeepOverlayAboveWindows(hwnd,guide!=null&&guide.IsVisible ? new WindowInteropHelper(guide).Handle : IntPtr.Zero);
         }
         private void RefreshDesktop()
         {
@@ -283,11 +289,11 @@ namespace DesktopSwitcher
                 Guid own=snapshot.IsUninitialized ? Guid.Empty : desktops.WindowDesktop(hwnd);
                 if(!snapshot.IsUninitialized&&own!=Guid.Empty&&own!=snapshot.Current) {
                     desktops.Move(hwnd,snapshot.Current);
-                    Native.SetWindowPos(hwnd,new IntPtr(-1),0,0,0,0,0x0013);
+                    Native.RaiseOverlay(hwnd);
                 }
                 string status=(snapshot.Index+1)+" / "+snapshot.Count;
                 if(status!=lastStatus) {
-                    lastStatus=status; tray.Text="桌面切屏/课件翻页助手 · 桌面切屏 · "+status;
+                    lastStatus=status; tray.Text="桌面切屏/课件翻页助手 · "+(settings.Mode==RunMode.Automatic ? "自动切换 · " : "")+"桌面切屏 · "+status;
                     left.ToolTip=snapshot.Index==0 ? "已在第一个桌面" : "切换到左侧桌面 · "+status;
                     right.ToolTip=snapshot.Index==snapshot.Count-1 ? "新建并进入桌面 · "+status : "切换到右侧桌面 · "+status;
                 }
@@ -298,33 +304,39 @@ namespace DesktopSwitcher
         }
         private void UpdateModeVisual()
         {
-            bool active=settings.Mode==RunMode.Courseware&&courseware.Active;
-            bool show=settings.Mode==RunMode.Desktop||active;
-            if(visualCourseware!=active) {
+            bool active=IsPageMode;
+            bool show=settings.Mode!=RunMode.Courseware||active;
+            bool routeChanged=visualCourseware!=active;
+            if(routeChanged) {
                 visualCourseware=active;
+                lastStatus="";
                 System.Windows.Automation.AutomationProperties.SetName(left,active ? "上一页" : "左侧桌面");
                 System.Windows.Automation.AutomationProperties.SetName(right,active ? "下一页" : "右侧桌面或新建");
                 left.ToolTip=active ? "上一页" : "切换到左侧桌面";
                 right.ToolTip=active ? "下一页" : "切换到右侧桌面；到末尾时新建";
             }
-            if(settings.Mode==RunMode.Courseware) tray.Text=active ? "桌面切换 · 课件翻页" : "桌面切换 · 课件翻页 · 等待放映";
+            if(active) tray.Text=settings.Mode==RunMode.Automatic ? "桌面切屏/课件翻页助手 · 自动切换 · 课件翻页" : "桌面切屏/课件翻页助手 · 课件翻页";
+            else if(!show) tray.Text="桌面切屏/课件翻页助手 · 课件翻页 · 等待放映";
             if(!show) {
                 if(guide!=null) guide.Hide();
                 if(dragging) { FinishDrag(); capsule.ReleaseMouseCapture(); }
-                CloseMenu(); if(IsVisible) Hide();
+                if(ContextMenu.IsOpen) CloseMenu();
+                if(IsVisible) Hide();
                 return;
             }
             if(!IsVisible) { docking.Expand(Now); Show(); ApplyPosition(); }
             if(active&&visualGeneration!=courseware.Generation) {
                 visualGeneration=courseware.Generation; docking.Expand(Now); ApplyDockVisual(false); ApplyPosition();
+                Native.RaiseOverlay(hwnd);
             }
             if(active&&courseware.BannerVisible) {
                 docking.Expand(Now); ApplyDockVisual(false); PositionGuide();
             } else if(guide!=null&&guide.IsVisible) guide.Hide();
+            if(routeChanged&&!active) ApplyPosition();
         }
         private void PositionGuide()
         {
-            if(closing||hwnd==IntPtr.Zero||!IsVisible||settings.Mode!=RunMode.Courseware||!courseware.BannerVisible) return;
+            if(closing||hwnd==IntPtr.Zero||!IsVisible||!IsPageMode||!courseware.BannerVisible) return;
             Native.RECT host;
             if(!Native.GetWindowRect(hwnd,out host)) return;
             double scale=Native.DpiScale(hwnd); int inset=(int)Math.Round(8*scale);
@@ -371,8 +383,7 @@ namespace DesktopSwitcher
         {
             if(closing) return;
             bool wasCollapsed=docking.Collapsed;
-            docking.Tick(now,pointerInside,settings.AutoHideEnabled&&!dragging&&!busy&&!ContextMenu.IsOpen&&
-                !tray.ContextMenuStrip.Visible&&(guide==null||!guide.IsVisible));
+            docking.Tick(now,pointerInside,settings.AutoHideEnabled&&!dragging&&!busy&&openMenu==null&&(guide==null||!guide.IsVisible));
             if(wasCollapsed&&!docking.Collapsed) nextPageClick=DateTime.UtcNow.AddMilliseconds(230);
             ApplyDockVisual();
         }
@@ -385,7 +396,7 @@ namespace DesktopSwitcher
         }
         private void ObserveMenu()
         {
-            if(!ContextMenu.IsOpen) { menuTimer.Stop(); return; }
+            if(openMenu==null||!openMenu.IsOpen) { menuTimer.Stop(); return; }
             Native.POINT cursor; if(!Native.GetCursorPos(out cursor)) return;
             IntPtr foreground=Native.GetForegroundWindow(); uint pid;
             Native.GetWindowThreadProcessId(foreground,out pid);
@@ -393,44 +404,53 @@ namespace DesktopSwitcher
         }
         internal void ObserveMenuPointer(Native.POINT pointer,int buttons,bool foregroundChanged)
         {
-            if(!ContextMenu.IsOpen) return;
-            var source=PresentationSource.FromVisual(ContextMenu) as HwndSource; Native.RECT rect;
-            if(source!=null&&Native.GetWindowRect(source.Handle,out rect)&&menuDismissal.Observe(rect,pointer,buttons,foregroundChanged)) CloseMenu();
+            if(openMenu==null||!openMenu.IsOpen) return;
+            if(menuDismissal.Observe(WidgetMenu.ContainsPointer(openMenu,pointer),buttons,foregroundChanged)) CloseMenu();
         }
         private void CloseMenu()
         {
-            if(ContextMenu==null) return;
-            ContextMenu.IsOpen=false; menuTimer.Stop();
-            if(Mouse.Captured==ContextMenu) Mouse.Capture(null);
+            var menu=openMenu;
+            openMenu=null; menuTimer.Stop();
+            if(menu!=null) {
+                menu.IsOpen=false;
+                if(Mouse.Captured==menu) Mouse.Capture(null);
+            }
         }
-        private bool DesktopStillValid(int generation)
-        { return !closing&&settings.Mode==RunMode.Desktop&&courseware.DesktopAllowed(ReadForeground(),generation); }
+        private bool NavigationStillValid(RunMode selected,bool page,ShowWindow target,int generation)
+        {
+            if(closing||settings.Mode!=selected) return false;
+            var foreground=ReadForeground();
+            if(selected!=RunMode.Desktop&&(foreground==null||Native.GetForegroundWindow()!=foreground.Handle)) return false;
+            return page ? courseware.CanSend(foreground,target,generation) :
+                selected!=RunMode.Courseware&&courseware.DesktopAllowed(foreground,generation);
+        }
         private async Task Navigate(bool goRight)
         {
             if(testing||busy||closing||dragging||docking.Collapsed||!IsVisible||DateTime.UtcNow<nextPageClick) return;
             var target=courseware.Target;
             int generation=courseware.Generation;
+            RunMode selected=settings.Mode;
             // A click always keeps its original route, even if the mode changes during awaits.
-            bool page=settings.Mode==RunMode.Courseware;
+            bool page=IsPageMode;
             if(page&&target==null) return;
-            if(page ? !courseware.CanSend(ReadForeground(),target,generation) : !DesktopStillValid(generation)) return;
+            Func<bool> stillValid=()=>NavigationStillValid(selected,page,target,generation);
+            if(!stillValid()) return;
             busy=true; left.IsEnabled=false; right.IsEnabled=false;
             try {
                 var clock=Stopwatch.StartNew();
                 while(Native.ModifiersDown()&&clock.ElapsedMilliseconds<800) await Task.Delay(40,shutdown.Token);
                 if(Native.ModifiersDown()) throw new InvalidOperationException("请先松开 Ctrl、Win、Alt 和 Shift 键，再点击箭头。");
                 if(page) {
-                    bool sent=Native.SendSingleKey(goRight ? (ushort)0x27 : (ushort)0x25,
-                        ()=>!closing&&settings.Mode==RunMode.Courseware&&courseware.CanSend(ReadForeground(),target,generation)&&Native.GetForegroundWindow()==target.Handle);
+                    bool sent=Native.SendSingleKey(goRight ? (ushort)0x27 : (ushort)0x25,stillValid);
                     if(sent) Settings.Log("Courseware: "+(goRight ? "Right" : "Left"));
                     return;
                 }
-                if(!DesktopStillValid(generation)) return;
+                if(!stillValid()) return;
                 DesktopSnapshot before=null;
                 for(int attempt=0;attempt<4;attempt++) {
-                    if(!DesktopStillValid(generation)) return;
+                    if(!stillValid()) return;
                     var first=desktopState.Read(); await Task.Delay(50,shutdown.Token);
-                    if(!DesktopStillValid(generation)) return;
+                    if(!stillValid()) return;
                     var second=desktopState.Read();
                     if(first.SameAs(second)) { before=second; break; }
                 }
@@ -443,13 +463,13 @@ namespace DesktopSwitcher
                 if(before.IsUninitialized && Native.GetShellWindow()==IntPtr.Zero)
                     throw new InvalidOperationException("Windows 桌面尚未就绪，请稍后重试。");
                 ushort key=action==DesktopAction.Create ? (ushort)0x44 : (action==DesktopAction.Left ? (ushort)0x25 : (ushort)0x27);
-                if(!Native.SendChord(key,()=>DesktopStillValid(generation))) return;
+                if(!Native.SendChord(key,stillValid)) return;
                 if(before.IsUninitialized) desktopState.MarkInitializationAttempt();
                 Guid expected=action==DesktopAction.Left ? before.Ids[before.Index-1] :
                     (action==DesktopAction.Right ? before.Ids[before.Index+1] : Guid.Empty);
                 clock.Restart(); bool confirmed=false;
                 while(clock.ElapsedMilliseconds<(before.IsUninitialized ? 5000 : 2500)) {
-                    await Task.Delay(80,shutdown.Token); if(!DesktopStillValid(generation)) return;
+                    await Task.Delay(80,shutdown.Token); if(!stillValid()) return;
                     try {
                         var now=desktopState.Read();
                         confirmed=action==DesktopAction.Create ? before.ConfirmsCreation(now) : now.Current==expected;
@@ -485,7 +505,6 @@ namespace DesktopSwitcher
         }
         private void ToggleStartup()
         { if(testing) return; try { Settings.AutoStart=!Settings.AutoStart; } catch(Exception error) { Notify("无法保存开机启动设置："+error.Message); } }
-        private void Exit() { RequestExit(); }
         internal void RequestExit()
         {
             if(!testing) ProcessExitGuard.Arm();
@@ -503,12 +522,12 @@ namespace DesktopSwitcher
             Settings.Log("Cleanup begin PID="+Process.GetCurrentProcess().Id);
             CleanupSteps.Run(new Action[] {
                 ()=>shutdown.Cancel(),()=>timer.Stop(),()=>menuTimer.Stop(),
-                ()=>{ if(Mouse.Captured==capsule||Mouse.Captured==ContextMenu) Mouse.Capture(null); },
+                ()=>{ if(Mouse.Captured==capsule) Mouse.Capture(null); },
                 ()=>CloseMenu(),
                 ()=>{ if(!testing) SystemEvents.DisplaySettingsChanged-=DisplayChanged; },
                 ()=>{ if(!testing) SystemEvents.UserPreferenceChanged-=PreferenceChanged; },
                 ()=>{ if(guide!=null) { guide.Close(); guide=null; } },
-                ()=>{ tray.Visible=false; },()=>{ if(tray.ContextMenuStrip!=null) tray.ContextMenuStrip.Dispose(); },
+                ()=>{ tray.Visible=false; },
                 ()=>tray.Dispose(),()=>ownedIcon.Dispose(),()=>desktops.Dispose()
             },error=>Settings.Log("Cleanup: "+error));
             Settings.Log("Cleanup complete PID="+Process.GetCurrentProcess().Id);
@@ -529,7 +548,7 @@ namespace DesktopSwitcher
         }
         private Forms.Screen EffectiveScreen()
         {
-            if(settings.Mode==RunMode.Courseware&&courseware.Active) {
+            if(IsPageMode) {
                 var target=courseware.Target.MonitorBounds;
                 return Forms.Screen.FromPoint(new System.Drawing.Point((target.Left+target.Right)/2,(target.Top+target.Bottom)/2));
             }
@@ -543,7 +562,7 @@ namespace DesktopSwitcher
             try {
                 var screen=EffectiveScreen(); double scale=Native.MonitorScale(screen); var area=screen.WorkingArea;
                 var work=new Native.RECT { Left=area.Left,Top=area.Top,Right=area.Right,Bottom=area.Bottom };
-                bool temporary=settings.Mode==RunMode.Courseware&&courseware.Active&&settings.Monitor!=""&&settings.Monitor!=screen.DeviceName;
+                bool temporary=IsPageMode&&settings.Monitor!=""&&settings.Monitor!=screen.DeviceName;
                 var bounds=Place(settings.DefaultPosition||temporary,settings.OffsetX,settings.OffsetY,work,scale,new Size(Width,Height));
                 bounds=Docking.Snap(bounds,work,settings.AutoHideEnabled ? settings.CurrentDock : DockSide.None,scale);
                 Native.RECT current;
@@ -577,6 +596,7 @@ namespace DesktopSwitcher
             e.Handled=true;
             if(busy||DateTime.UtcNow<nextPageClick) return;
             dragButton=HitButton(e.OriginalSource as DependencyObject);
+            dragMode=settings.Mode; dragGeneration=courseware.Generation;
             Native.GetCursorPos(out dragStart); Native.GetWindowRect(hwnd,out dragRect);
             dragging=true; moved=false; docking.Expand(Now); capsule.CaptureMouse(); e.Handled=true;
         }
@@ -593,7 +613,7 @@ namespace DesktopSwitcher
         private void EndDrag(object sender,MouseButtonEventArgs e)
         {
             if(!dragging) return;
-            var click=dragButton; bool navigates=!moved&&click!=null;
+            var click=dragButton; bool navigates=!moved&&click!=null&&settings.Mode==dragMode&&courseware.Generation==dragGeneration;
             FinishDrag(); capsule.ReleaseMouseCapture(); dragButton=null; e.Handled=true;
             if(navigates) {
                 Point point=e.GetPosition(click);

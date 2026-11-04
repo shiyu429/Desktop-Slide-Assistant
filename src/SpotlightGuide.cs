@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Shapes;
 
@@ -10,34 +11,77 @@ namespace DesktopSwitcher
 {
     internal sealed class GuideLayout
     {
+        internal const double ScreenInset=16;
+        private const double Gap=24;
         internal Rect Hole,Card;
-        internal bool CardAbove;
+        internal Geometry Stem;
         internal static GuideLayout Calculate(Size screen,Rect capsule,Size card)
         {
-            var hole=capsule; hole.Inflate(7,7);
-            hole.Intersect(new Rect(0,0,screen.Width,screen.Height));
-            double width=Math.Min(card.Width,Math.Max(1,screen.Width-24));
-            double height=Math.Min(card.Height,Math.Max(1,screen.Height-24));
-            double x=Math.Max(12,Math.Min(screen.Width-width-12,capsule.Right-width));
-            double y=hole.Top-height-30;
-            bool above=y>=12;
-            if(!above) y=hole.Bottom+30;
-            y=Math.Max(12,Math.Min(screen.Height-height-12,y));
-            return new GuideLayout { Hole=hole,Card=new Rect(x,y,width,height),CardAbove=above };
+            // Let the window clip the opening at a screen edge. Clamping the rectangle first
+            // would move its rounded corners inward and dim part of the button at that edge.
+            var hole=capsule;
+            hole.Inflate(10,10);
+            double width=Math.Min(card.Width,Math.Max(0,screen.Width-2*ScreenInset));
+            double height=Math.Min(card.Height,Math.Max(0,screen.Height-2*ScreenInset));
+            double top=hole.Top-ScreenInset, bottom=screen.Height-ScreenInset-hole.Bottom;
+            double left=hole.Left-ScreenInset, right=screen.Width-ScreenInset-hole.Right;
+            var layout=new GuideLayout { Hole=hole };
+
+            if(Math.Max(top,bottom)<height+Gap&&Math.Max(left,right)>=width+Gap) {
+                bool placeLeft=left>=right;
+                double x=placeLeft ? hole.Left-Gap-width : hole.Right+Gap;
+                double y=Fit(capsule.Top+(capsule.Height-height)/2,screen.Height,height);
+                layout.Card=new Rect(x,y,width,height);
+                double axis=ClampToCard(capsule.Top+capsule.Height/2,y,height);
+                layout.Stem=DrawStem(new Point(placeLeft ? layout.Card.Right+5 : x-5,axis),
+                    new Point(placeLeft ? hole.Left-7 : hole.Right+7,axis));
+                return layout;
+            }
+
+            bool above=top>=height+Gap||(bottom<height+Gap&&top>=bottom);
+            double room=Math.Max(0,above ? top : bottom);
+            height=Math.Min(height,Math.Max(0,room-6));
+            double gap=Math.Min(Gap,room-height);
+            double cardX=Fit(capsule.Left+(capsule.Width-width)/2,screen.Width,width);
+            double cardY=above ? hole.Top-gap-height : hole.Bottom+gap;
+            layout.Card=new Rect(cardX,cardY,width,height);
+            double anchor=ClampToCard(capsule.Left+capsule.Width/2,cardX,width);
+            layout.Stem=gap>=18 ? DrawStem(new Point(anchor,above ? layout.Card.Bottom+5 : cardY-5),
+                new Point(anchor,above ? hole.Top-7 : hole.Bottom+7)) : Geometry.Empty;
+            return layout;
         }
+        private static double Fit(double origin,double available,double length)
+        { return Math.Max(ScreenInset,Math.Min(available-ScreenInset-length,origin)); }
+        private static double ClampToCard(double point,double origin,double length)
+        {
+            double inset=Math.Min(14,length/2);
+            return Math.Max(origin+inset,Math.Min(origin+length-inset,point));
+        }
+        private static Geometry DrawStem(Point start,Point end)
+        {
+            return new GeometryGroup { Children=new GeometryCollection {
+                new LineGeometry(start,end),new EllipseGeometry(end,2.2,2.2)
+            }};
+        }
+        internal RectangleGeometry Opening { get { return new RectangleGeometry(Hole,24,24); } }
         internal Geometry Mask(Size screen)
         {
             return new CombinedGeometry(GeometryCombineMode.Exclude,
-                new RectangleGeometry(new Rect(0,0,screen.Width,screen.Height)),new RectangleGeometry(Hole,19,19));
+                new RectangleGeometry(new Rect(0,0,screen.Width,screen.Height)),Opening);
         }
     }
 
     internal sealed class SpotlightGuide : Window
     {
+        private const double CardWidth=224;
         private readonly Canvas canvas=new Canvas { ClipToBounds=true };
-        private readonly Path mask=new Path { Fill=new SolidColorBrush(Color.FromArgb(160,0,0,0)) };
-        private readonly Path ring=new Path { Stroke=new SolidColorBrush(Color.FromRgb(164,211,255)),StrokeThickness=2,IsHitTestVisible=false };
-        private readonly Path connector=new Path { Stroke=new SolidColorBrush(Color.FromRgb(164,211,255)),StrokeThickness=2,IsHitTestVisible=false };
+        private readonly Path mask=new Path { Fill=new SolidColorBrush(Color.FromArgb(161,9,17,32)) };
+        private readonly Path halo=new Path { Stroke=new SolidColorBrush(Color.FromArgb(38,117,184,255)),StrokeThickness=6,IsHitTestVisible=false };
+        private readonly Path ring=new Path { Stroke=new SolidColorBrush(Color.FromArgb(198,153,204,255)),StrokeThickness=1.4,IsHitTestVisible=false };
+        private readonly Path connector=new Path {
+            Stroke=new SolidColorBrush(Color.FromRgb(153,204,255)),Fill=new SolidColorBrush(Color.FromRgb(153,204,255)),
+            StrokeThickness=1.4,StrokeStartLineCap=PenLineCap.Round,StrokeEndLineCap=PenLineCap.Round,IsHitTestVisible=false
+        };
         private readonly Border card;
         private readonly Action dismiss;
         private Native.RECT screenBounds,capsuleBounds;
@@ -45,6 +89,31 @@ namespace DesktopSwitcher
         private double scale=1;
         internal GuideLayout Layout { get; private set; }
         internal Button SuppressButton { get; private set; }
+        private const string CardXaml=@"<Border xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'
+            Padding='17,14' CornerRadius='20' BorderThickness='1' BorderBrush='#95637EA4' ClipToBounds='True'>
+          <Border.Background><LinearGradientBrush StartPoint='0,0' EndPoint='1,1'>
+            <GradientStop Offset='0' Color='#FF253750'/><GradientStop Offset='1' Color='#FF131F32'/>
+          </LinearGradientBrush></Border.Background>
+          <StackPanel TextElement.FontFamily='Microsoft YaHei UI'>
+            <StackPanel Orientation='Horizontal'>
+              <Ellipse Width='6' Height='6' Fill='#9BCBFF' VerticalAlignment='Center' Margin='0,0,7,0'/>
+              <TextBlock Text='课件翻页' FontSize='11' FontWeight='SemiBold' Foreground='#BCD6F6'/>
+            </StackPanel>
+            <TextBlock Text='点击此处翻页' FontSize='17' FontWeight='SemiBold' Foreground='#F6FAFF' Margin='0,5,0,12' TextWrapping='Wrap'/>
+            <Button x:Name='Suppress' Content='不再提醒' AutomationProperties.Name='不再提醒' Focusable='False' Cursor='Hand'
+                FontSize='12' Foreground='#E9F3FF' Padding='12,5' HorizontalAlignment='Right' MinHeight='29'>
+              <Button.Template><ControlTemplate TargetType='Button'>
+                <Border x:Name='Pill' CornerRadius='11' Background='#30435E' BorderBrush='#55759C' BorderThickness='1' Padding='{TemplateBinding Padding}'>
+                  <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/>
+                </Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property='IsMouseOver' Value='True'><Setter TargetName='Pill' Property='Background' Value='#405B7D'/></Trigger>
+                  <Trigger Property='IsPressed' Value='True'><Setter TargetName='Pill' Property='Background' Value='#253851'/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate></Button.Template>
+            </Button>
+          </StackPanel>
+        </Border>";
         internal SpotlightGuide(Window owner,Action dismiss,Action suppress)
         {
             this.dismiss=dismiss;
@@ -53,19 +122,10 @@ namespace DesktopSwitcher
             AllowsTransparency=true; Background=Brushes.Transparent;
             ShowInTaskbar=true; ShowActivated=false; Topmost=true; WindowStartupLocation=WindowStartupLocation.Manual;
             Owner=owner;
-            var stack=new StackPanel();
-            stack.Children.Add(new TextBlock { Text="在这里也可以翻页",FontFamily=new FontFamily("Microsoft YaHei UI"),FontSize=18,
-                Foreground=Brushes.White,Margin=new Thickness(0,0,0,12) });
-            SuppressButton=new Button { Content="不再提醒",Focusable=false,Cursor=Cursors.Hand,
-                FontFamily=new FontFamily("Microsoft YaHei UI"),FontSize=13,Padding=new Thickness(14,5,14,5),
-                HorizontalAlignment=HorizontalAlignment.Right,Background=new SolidColorBrush(Color.FromRgb(61,86,112)),
-                Foreground=Brushes.White,BorderBrush=new SolidColorBrush(Color.FromRgb(97,130,164)) };
-            System.Windows.Automation.AutomationProperties.SetName(SuppressButton,"不再提醒");
+            card=(Border)XamlReader.Parse(CardXaml);
+            SuppressButton=(Button)card.FindName("Suppress");
             SuppressButton.Click+=(s,e)=>{ e.Handled=true; suppress(); };
-            stack.Children.Add(SuppressButton);
-            card=new Border { Child=stack,Padding=new Thickness(18,14,18,14),CornerRadius=new CornerRadius(14),
-                Background=new SolidColorBrush(Color.FromArgb(248,31,38,47)),BorderBrush=new SolidColorBrush(Color.FromArgb(90,188,221,255)),BorderThickness=new Thickness(1) };
-            canvas.Children.Add(mask); canvas.Children.Add(ring); canvas.Children.Add(connector); canvas.Children.Add(card); Content=canvas;
+            canvas.Children.Add(mask); canvas.Children.Add(halo); canvas.Children.Add(ring); canvas.Children.Add(connector); canvas.Children.Add(card); Content=canvas;
             canvas.PreviewMouseDown+=(s,e)=>{
                 if(DismissAt(e.GetPosition(canvas),e.OriginalSource as DependencyObject)) e.Handled=true;
             };
@@ -83,7 +143,7 @@ namespace DesktopSwitcher
                 if(source==SuppressButton) return false;
                 source=VisualTreeHelper.GetParent(source);
             }
-            if(Layout!=null&&Layout.Hole.Contains(position)) return false;
+            if(Layout!=null&&Layout.Opening.FillContains(position)) return false;
             dismiss(); return true;
         }
         private IntPtr Hook(IntPtr handle,int message,IntPtr w,IntPtr l,ref bool handled)
@@ -116,24 +176,14 @@ namespace DesktopSwitcher
             var screen=new Size((screenBounds.Right-screenBounds.Left)/dpi,(screenBounds.Bottom-screenBounds.Top)/dpi);
             var capsule=new Rect((capsuleBounds.Left-screenBounds.Left)/dpi,(capsuleBounds.Top-screenBounds.Top)/dpi,
                 (capsuleBounds.Right-capsuleBounds.Left)/dpi,(capsuleBounds.Bottom-capsuleBounds.Top)/dpi);
-            card.Measure(new Size(Math.Max(1,screen.Width-24),double.PositiveInfinity));
+            card.Width=Math.Min(CardWidth,Math.Max(0,screen.Width-2*GuideLayout.ScreenInset));
+            card.ClearValue(HeightProperty);
+            card.Measure(new Size(card.Width,double.PositiveInfinity));
             Layout=GuideLayout.Calculate(screen,capsule,card.DesiredSize);
-            mask.Data=Layout.Mask(screen); ring.Data=new RectangleGeometry(Layout.Hole,19,19);
+            mask.Data=Layout.Mask(screen); ring.Data=halo.Data=Layout.Opening;
+            connector.Data=Layout.Stem;
             Canvas.SetLeft(card,Layout.Card.Left); Canvas.SetTop(card,Layout.Card.Top);
-            card.Width=Layout.Card.Width;
-            double arrowX=Math.Max(Layout.Hole.Left+10,Math.Min(Layout.Hole.Right-10,Layout.Card.Left+Layout.Card.Width/2));
-            double startY=Layout.CardAbove ? Layout.Card.Bottom+5 : Layout.Card.Top-5;
-            double endY=Layout.CardAbove ? Layout.Hole.Top-5 : Layout.Hole.Bottom+5;
-            double direction=Layout.CardAbove ? -1 : 1;
-            var geometry=new StreamGeometry();
-            using(var draw=geometry.Open()) {
-                draw.BeginFigure(new Point(Layout.Card.Left+Layout.Card.Width/2,startY),false,false);
-                draw.LineTo(new Point(arrowX,endY),true,false);
-                draw.LineTo(new Point(arrowX-5,endY+direction*7),true,false);
-                draw.BeginFigure(new Point(arrowX,endY),false,false);
-                draw.LineTo(new Point(arrowX+5,endY+direction*7),true,false);
-            }
-            connector.Data=geometry;
+            card.Height=Layout.Card.Height;
         }
         private static bool Same(Native.RECT a,Native.RECT b)
         { return a.Left==b.Left&&a.Top==b.Top&&a.Right==b.Right&&a.Bottom==b.Bottom; }

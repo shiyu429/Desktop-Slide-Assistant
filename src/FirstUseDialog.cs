@@ -28,10 +28,14 @@ namespace DesktopSwitcher
               <StackPanel><TextBlock Text='桌面切屏' FontSize='17' FontWeight='SemiBold' Foreground='#21384F'/>
                 <TextBlock Text='左右切换虚拟桌面，到末尾时新建桌面。' Margin='0,6,0,0' TextWrapping='Wrap' FontSize='13' Foreground='#65778A'/></StackPanel>
             </Button>
-            <Button x:Name='ChooseCourseware' AutomationProperties.Name='选择课件翻页'>
+            <Button x:Name='ChooseCourseware' Margin='0,0,0,12' AutomationProperties.Name='选择课件翻页'>
               <StackPanel><TextBlock Text='课件翻页' FontSize='17' FontWeight='SemiBold' Foreground='#21384F'/>
                 <TextBlock Text='只在幻灯片放映时显示，用左右按钮翻页。' Margin='0,6,0,0' TextWrapping='Wrap' FontSize='13' Foreground='#65778A'/>
                 <TextBlock Text='选择后会询问是否允许开机启动，可拒绝。' Margin='0,6,0,0' TextWrapping='Wrap' FontSize='12' Foreground='#507DA4'/></StackPanel>
+            </Button>
+            <Button x:Name='ChooseAutomatic' AutomationProperties.Name='选择自动切换'>
+              <StackPanel><TextBlock Text='自动切换' FontSize='17' FontWeight='SemiBold' Foreground='#21384F'/>
+                <TextBlock Text='平时切换桌面，全屏放映时自动改为翻页。' Margin='0,6,0,0' TextWrapping='Wrap' FontSize='13' Foreground='#65778A'/></StackPanel>
             </Button>
           </StackPanel>
         </Grid>";
@@ -51,6 +55,7 @@ namespace DesktopSwitcher
             }
             ((Button)root.FindName("ChooseDesktop")).Click+=(s,e)=>Choose(RunMode.Desktop);
             ((Button)root.FindName("ChooseCourseware")).Click+=(s,e)=>Choose(RunMode.Courseware);
+            ((Button)root.FindName("ChooseAutomatic")).Click+=(s,e)=>Choose(RunMode.Automatic);
         }
         private void Choose(RunMode mode) { SelectedMode=mode; DialogResult=true; }
     }

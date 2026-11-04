@@ -112,6 +112,10 @@ namespace DesktopSwitcher
         internal void SetDisabled(bool value)
         {
             if(Disabled==value) return;
+            Reset(value);
+        }
+        internal void Reset(bool value)
+        {
             Disabled=value; candidate=null;
             // Invalidate any click already waiting for modifiers or desktop confirmation.
             SetTarget(null);
