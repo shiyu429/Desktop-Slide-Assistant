@@ -1,4 +1,4 @@
-param([string]$Version='1.4.1')
+param([string]$Version='1.4.5')
 $ErrorActionPreference='Stop'
 $projectPath=Split-Path -Parent $PSScriptRoot
 $projectPath=(Resolve-Path -LiteralPath $projectPath).Path
