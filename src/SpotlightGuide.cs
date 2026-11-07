@@ -11,16 +11,19 @@ namespace DesktopSwitcher
 {
     internal sealed class GuideLayout
     {
-        internal const double ScreenInset=16;
-        private const double Gap=24;
+        internal const double ScreenInset=12;
+        private const double Gap=30;
         internal Rect Hole,Card;
-        internal Geometry Stem;
+        internal Geometry Arrow;
         internal static GuideLayout Calculate(Size screen,Rect capsule,Size card)
         {
             // Let the window clip the opening at a screen edge. Clamping the rectangle first
             // would move its rounded corners inward and dim part of the button at that edge.
             var hole=capsule;
-            hole.Inflate(10,10);
+            hole.Inflate(7,7);
+            var visible=Rect.Intersect(capsule,new Rect(screen));
+            bool hasVisibleCapsule=!visible.IsEmpty&&visible.Width>0&&visible.Height>0;
+            if(!hasVisibleCapsule) visible=capsule;
             double width=Math.Min(card.Width,Math.Max(0,screen.Width-2*ScreenInset));
             double height=Math.Min(card.Height,Math.Max(0,screen.Height-2*ScreenInset));
             double top=hole.Top-ScreenInset, bottom=screen.Height-ScreenInset-hole.Bottom;
@@ -30,11 +33,11 @@ namespace DesktopSwitcher
             if(Math.Max(top,bottom)<height+Gap&&Math.Max(left,right)>=width+Gap) {
                 bool placeLeft=left>=right;
                 double x=placeLeft ? hole.Left-Gap-width : hole.Right+Gap;
-                double y=Fit(capsule.Top+(capsule.Height-height)/2,screen.Height,height);
+                double y=Fit(visible.Top+(visible.Height-height)/2,screen.Height,height);
                 layout.Card=new Rect(x,y,width,height);
-                double axis=ClampToCard(capsule.Top+capsule.Height/2,y,height);
-                layout.Stem=DrawStem(new Point(placeLeft ? layout.Card.Right+5 : x-5,axis),
-                    new Point(placeLeft ? hole.Left-7 : hole.Right+7,axis));
+                double targetY=ArrowAxis(visible.Top,visible.Height,y,height);
+                layout.Arrow=hasVisibleCapsule ? DrawArrow(new Point(placeLeft ? layout.Card.Right+5 : x-5,ClampToCard(targetY,y,height)),
+                    new Point(placeLeft ? hole.Left-5 : hole.Right+5,targetY)) : Geometry.Empty;
                 return layout;
             }
 
@@ -42,12 +45,12 @@ namespace DesktopSwitcher
             double room=Math.Max(0,above ? top : bottom);
             height=Math.Min(height,Math.Max(0,room-6));
             double gap=Math.Min(Gap,room-height);
-            double cardX=Fit(capsule.Left+(capsule.Width-width)/2,screen.Width,width);
+            double cardX=Fit(visible.Left+(visible.Width-width)/2,screen.Width,width);
             double cardY=above ? hole.Top-gap-height : hole.Bottom+gap;
             layout.Card=new Rect(cardX,cardY,width,height);
-            double anchor=ClampToCard(capsule.Left+capsule.Width/2,cardX,width);
-            layout.Stem=gap>=18 ? DrawStem(new Point(anchor,above ? layout.Card.Bottom+5 : cardY-5),
-                new Point(anchor,above ? hole.Top-7 : hole.Bottom+7)) : Geometry.Empty;
+            double tipX=ArrowAxis(visible.Left,visible.Width,cardX,width);
+            layout.Arrow=hasVisibleCapsule&&gap>=18 ? DrawArrow(new Point(ClampToCard(tipX,cardX,width),above ? layout.Card.Bottom+5 : cardY-5),
+                new Point(tipX,above ? hole.Top-5 : hole.Bottom+5)) : Geometry.Empty;
             return layout;
         }
         private static double Fit(double origin,double available,double length)
@@ -57,13 +60,29 @@ namespace DesktopSwitcher
             double inset=Math.Min(14,length/2);
             return Math.Max(origin+inset,Math.Min(origin+length-inset,point));
         }
-        private static Geometry DrawStem(Point start,Point end)
+        private static double ArrowAxis(double visibleStart,double visibleLength,double cardStart,double cardLength)
         {
-            return new GeometryGroup { Children=new GeometryCollection {
-                new LineGeometry(start,end),new EllipseGeometry(end,2.2,2.2)
-            }};
+            double inset=Math.Min(7,visibleLength/2);
+            double axis=ClampToCard(visibleStart+visibleLength/2,cardStart,cardLength);
+            return Math.Max(visibleStart+inset,Math.Min(visibleStart+visibleLength-inset,axis));
         }
-        internal RectangleGeometry Opening { get { return new RectangleGeometry(Hole,24,24); } }
+        private static Geometry DrawArrow(Point start,Point tip)
+        {
+            var direction=tip-start;
+            direction.Normalize();
+            var head=tip-7*direction;
+            var wing=5*new Vector(-direction.Y,direction.X);
+            var geometry=new StreamGeometry();
+            using(var draw=geometry.Open()) {
+                draw.BeginFigure(start,false,false);
+                draw.LineTo(tip,true,false);
+                draw.BeginFigure(head-wing,false,false);
+                draw.LineTo(tip,true,false);
+                draw.LineTo(head+wing,true,false);
+            }
+            return geometry;
+        }
+        internal RectangleGeometry Opening { get { return new RectangleGeometry(Hole,19,19); } }
         internal Geometry Mask(Size screen)
         {
             return new CombinedGeometry(GeometryCombineMode.Exclude,
@@ -73,14 +92,13 @@ namespace DesktopSwitcher
 
     internal sealed class SpotlightGuide : Window
     {
-        private const double CardWidth=224;
         private readonly Canvas canvas=new Canvas { ClipToBounds=true };
-        private readonly Path mask=new Path { Fill=new SolidColorBrush(Color.FromArgb(161,9,17,32)) };
-        private readonly Path halo=new Path { Stroke=new SolidColorBrush(Color.FromArgb(38,117,184,255)),StrokeThickness=6,IsHitTestVisible=false };
-        private readonly Path ring=new Path { Stroke=new SolidColorBrush(Color.FromArgb(198,153,204,255)),StrokeThickness=1.4,IsHitTestVisible=false };
+        private readonly Path mask=new Path { Fill=new SolidColorBrush(Color.FromArgb(160,0,0,0)) };
+        private readonly Path ring=new Path { Stroke=new SolidColorBrush(Color.FromRgb(164,211,255)),StrokeThickness=2,IsHitTestVisible=false };
         private readonly Path connector=new Path {
-            Stroke=new SolidColorBrush(Color.FromRgb(153,204,255)),Fill=new SolidColorBrush(Color.FromRgb(153,204,255)),
-            StrokeThickness=1.4,StrokeStartLineCap=PenLineCap.Round,StrokeEndLineCap=PenLineCap.Round,IsHitTestVisible=false
+            Stroke=new SolidColorBrush(Color.FromRgb(164,211,255)),StrokeThickness=2,
+            StrokeStartLineCap=PenLineCap.Round,StrokeEndLineCap=PenLineCap.Round,
+            StrokeLineJoin=PenLineJoin.Round,IsHitTestVisible=false
         };
         private readonly Border card;
         private readonly Action dismiss;
@@ -90,25 +108,18 @@ namespace DesktopSwitcher
         internal GuideLayout Layout { get; private set; }
         internal Button SuppressButton { get; private set; }
         private const string CardXaml=@"<Border xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'
-            Padding='17,14' CornerRadius='20' BorderThickness='1' BorderBrush='#95637EA4' ClipToBounds='True'>
-          <Border.Background><LinearGradientBrush StartPoint='0,0' EndPoint='1,1'>
-            <GradientStop Offset='0' Color='#FF253750'/><GradientStop Offset='1' Color='#FF131F32'/>
-          </LinearGradientBrush></Border.Background>
+            Padding='22,16' CornerRadius='14' Background='#F81F262F' BorderThickness='1' BorderBrush='#5ABCDDFF' ClipToBounds='True'>
           <StackPanel TextElement.FontFamily='Microsoft YaHei UI'>
-            <StackPanel Orientation='Horizontal'>
-              <Ellipse Width='6' Height='6' Fill='#9BCBFF' VerticalAlignment='Center' Margin='0,0,7,0'/>
-              <TextBlock Text='课件翻页' FontSize='11' FontWeight='SemiBold' Foreground='#BCD6F6'/>
-            </StackPanel>
-            <TextBlock Text='点击此处翻页' FontSize='17' FontWeight='SemiBold' Foreground='#F6FAFF' Margin='0,5,0,12' TextWrapping='Wrap'/>
+            <TextBlock Text='点击此处翻页' FontSize='19' Foreground='White' Margin='0,0,0,16' TextWrapping='Wrap'/>
             <Button x:Name='Suppress' Content='不再提醒' AutomationProperties.Name='不再提醒' Focusable='False' Cursor='Hand'
-                FontSize='12' Foreground='#E9F3FF' Padding='12,5' HorizontalAlignment='Right' MinHeight='29'>
+                FontSize='13' Foreground='White' Padding='14,5' HorizontalAlignment='Right'>
               <Button.Template><ControlTemplate TargetType='Button'>
-                <Border x:Name='Pill' CornerRadius='11' Background='#30435E' BorderBrush='#55759C' BorderThickness='1' Padding='{TemplateBinding Padding}'>
+                <Border x:Name='ButtonSurface' CornerRadius='8' Background='#3D5670' BorderBrush='#6182A4' BorderThickness='1' Padding='{TemplateBinding Padding}'>
                   <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/>
                 </Border>
                 <ControlTemplate.Triggers>
-                  <Trigger Property='IsMouseOver' Value='True'><Setter TargetName='Pill' Property='Background' Value='#405B7D'/></Trigger>
-                  <Trigger Property='IsPressed' Value='True'><Setter TargetName='Pill' Property='Background' Value='#253851'/></Trigger>
+                  <Trigger Property='IsMouseOver' Value='True'><Setter TargetName='ButtonSurface' Property='Background' Value='#4A6583'/></Trigger>
+                  <Trigger Property='IsPressed' Value='True'><Setter TargetName='ButtonSurface' Property='Background' Value='#304862'/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate></Button.Template>
             </Button>
@@ -125,7 +136,7 @@ namespace DesktopSwitcher
             card=(Border)XamlReader.Parse(CardXaml);
             SuppressButton=(Button)card.FindName("Suppress");
             SuppressButton.Click+=(s,e)=>{ e.Handled=true; suppress(); };
-            canvas.Children.Add(mask); canvas.Children.Add(halo); canvas.Children.Add(ring); canvas.Children.Add(connector); canvas.Children.Add(card); Content=canvas;
+            canvas.Children.Add(mask); canvas.Children.Add(ring); canvas.Children.Add(connector); canvas.Children.Add(card); Content=canvas;
             canvas.PreviewMouseDown+=(s,e)=>{
                 if(DismissAt(e.GetPosition(canvas),e.OriginalSource as DependencyObject)) e.Handled=true;
             };
@@ -176,14 +187,14 @@ namespace DesktopSwitcher
             var screen=new Size((screenBounds.Right-screenBounds.Left)/dpi,(screenBounds.Bottom-screenBounds.Top)/dpi);
             var capsule=new Rect((capsuleBounds.Left-screenBounds.Left)/dpi,(capsuleBounds.Top-screenBounds.Top)/dpi,
                 (capsuleBounds.Right-capsuleBounds.Left)/dpi,(capsuleBounds.Bottom-capsuleBounds.Top)/dpi);
-            card.Width=Math.Min(CardWidth,Math.Max(0,screen.Width-2*GuideLayout.ScreenInset));
+            card.ClearValue(WidthProperty);
             card.ClearValue(HeightProperty);
-            card.Measure(new Size(card.Width,double.PositiveInfinity));
+            card.Measure(new Size(Math.Max(0,screen.Width-2*GuideLayout.ScreenInset),double.PositiveInfinity));
             Layout=GuideLayout.Calculate(screen,capsule,card.DesiredSize);
-            mask.Data=Layout.Mask(screen); ring.Data=halo.Data=Layout.Opening;
-            connector.Data=Layout.Stem;
+            mask.Data=Layout.Mask(screen); ring.Data=Layout.Opening;
+            connector.Data=Layout.Arrow;
             Canvas.SetLeft(card,Layout.Card.Left); Canvas.SetTop(card,Layout.Card.Top);
-            card.Height=Layout.Card.Height;
+            card.Width=Layout.Card.Width; card.Height=Layout.Card.Height;
         }
         private static bool Same(Native.RECT a,Native.RECT b)
         { return a.Left==b.Left&&a.Top==b.Top&&a.Right==b.Right&&a.Bottom==b.Bottom; }

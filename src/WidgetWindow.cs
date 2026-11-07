@@ -577,6 +577,10 @@ namespace DesktopSwitcher
             int x=defaultPosition ? area.Right-(int)Math.Round(124*scale) : area.Left+(int)Math.Round(offsetX*scale);
             int y=defaultPosition ? area.Bottom-(int)Math.Round(72*scale) : area.Top+(int)Math.Round(offsetY*scale);
             int inset=(int)Math.Round(8*scale);
+            return ClampHostBounds(x,y,width,height,area,inset);
+        }
+        internal static Native.RECT ClampHostBounds(int x,int y,int width,int height,Native.RECT area,int inset)
+        {
             x=Clamp(x,area.Left-inset,Math.Max(area.Left-inset,area.Right-width+inset));
             y=Clamp(y,area.Top-inset,Math.Max(area.Top-inset,area.Bottom-height+inset));
             return new Native.RECT { Left=x,Top=y,Right=x+width,Bottom=y+height };
@@ -607,7 +611,19 @@ namespace DesktopSwitcher
             int dx=now.X-dragStart.X,dy=now.Y-dragStart.Y;
             if(!moved&&!DragThresholdReached(dx,dy)) return;
             moved=true;
-            Native.SetWindowPos(hwnd,IntPtr.Zero,dragRect.Left+dx,dragRect.Top+dy,0,0,0x0015);
+            int x=dragRect.Left+dx,y=dragRect.Top+dy;
+            if(IsPageMode&&courseware.BannerVisible) {
+                // While the guide is visible, keep both buttons on the monitor under the pointer.
+                var screen=Forms.Screen.FromPoint(new System.Drawing.Point(now.X,now.Y));
+                Native.RECT host;
+                if(!Native.GetWindowRect(hwnd,out host)) host=dragRect;
+                var bounds=screen.Bounds;
+                var area=new Native.RECT { Left=bounds.Left,Top=bounds.Top,Right=bounds.Right,Bottom=bounds.Bottom };
+                int inset=(int)Math.Round(8*Native.DpiScale(hwnd));
+                var clamped=ClampHostBounds(x,y,host.Right-host.Left,host.Bottom-host.Top,area,inset);
+                x=clamped.Left; y=clamped.Top;
+            }
+            Native.SetWindowPos(hwnd,IntPtr.Zero,x,y,0,0,0x0015);
         }
         internal static bool DragThresholdReached(int dx,int dy) { return (long)dx*dx+(long)dy*dy>=9; }
         private void EndDrag(object sender,MouseButtonEventArgs e)

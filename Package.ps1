@@ -1,6 +1,6 @@
-param([string]$OutputDirectory = 'releases\1.4.1\portable', [switch]$SourceOnly)
+param([string]$OutputDirectory = 'releases\1.4.5\portable', [switch]$SourceOnly)
 $ErrorActionPreference = 'Stop'
-$releaseVersion = '1.4.1'
+$releaseVersion = '1.4.5'
 $projectPrefix = $PSScriptRoot.TrimEnd('\')+'\'
 function Project-Path([string]$relative) {
     $path = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $relative))

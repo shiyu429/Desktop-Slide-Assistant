@@ -72,15 +72,22 @@ namespace DesktopSwitcher
                 var mask=layout.Mask(screen);
                 check(!new[] { target.TopLeft,target.TopRight,target.BottomLeft,target.BottomRight }.Any(p=>mask.FillContains(p)),
                     "rounded opening leaves the entire button rectangle unobstructed at "+origin);
-                check(!layout.Hole.IntersectsWith(layout.Card)&&!layout.Hole.IntersectsWith(layout.Stem.Bounds),
-                    "spotlight card and dotted connector stay clear of the buttons at "+origin);
+                check(!layout.Hole.IntersectsWith(layout.Card)&&!layout.Hole.IntersectsWith(layout.Arrow.Bounds),
+                    "spotlight card and pointer stay clear of the buttons at "+origin);
                 check(origin.Y==0 ? layout.Card.Top>target.Bottom : layout.Card.Bottom<target.Top,
                     "spotlight card chooses available vertical space at "+origin);
+            }
+            foreach(var target in new[] { new Rect(-40,200,96,44),new Rect(744,200,96,44) }) {
+                var layout=GuideLayout.Calculate(screen,target,card);
+                var visible=Rect.Intersect(target,new Rect(screen));
+                var arrow=layout.Arrow.Bounds;
+                check(Math.Abs(arrow.Width-10)<0.01&&Math.Abs(arrow.Left+arrow.Width/2-visible.Left-visible.Width/2)<0.01,
+                    "pointer stays straight and centered on the visible part of a capsule crossing the edge");
             }
             var shortScreen=new Size(700,240);
             var shortLayout=GuideLayout.Calculate(shortScreen,new Rect(302,98,96,44),card);
             check(shortLayout.Card.Width==card.Width&&shortLayout.Card.Height==card.Height&&shortLayout.Card.Right<shortLayout.Hole.Left&&
-                !shortLayout.Stem.Bounds.IntersectsWith(shortLayout.Hole),"short screen moves the card and connector to the side without covering the widget");
+                !shortLayout.Arrow.Bounds.IntersectsWith(shortLayout.Hole),"short screen moves the card and pointer to the side without covering the widget");
             string settingsFile=System.IO.Path.Combine(System.IO.Path.GetDirectoryName(typeof(WidgetFeatureTests).Assembly.Location),"settings-features-"+Guid.NewGuid()+".xml");
             try {
                 var settings=new Settings { Mode=RunMode.Courseware,TransparentMode=true,Dock=DockSide.Right,EdgeAutoHide=false,
@@ -223,11 +230,21 @@ namespace DesktopSwitcher
                     "spotlight hole aligns to capsule and leaves paging area unobstructed");
                 var guideCard=canvas.Children.OfType<Border>().Single();
                 var message=((StackPanel)guideCard.Child).Children.OfType<TextBlock>().Single();
-                var pill=(Border)guide.SuppressButton.Template.FindName("Pill",guide.SuppressButton);
+                var buttonSurface=(Border)guide.SuppressButton.Template.FindName("ButtonSurface",guide.SuppressButton);
                 check(message.Text=="点击此处翻页"&&guide.SuppressButton.Content.ToString()=="不再提醒","guide uses requested copy and suppression button");
-                check(guideCard.CornerRadius.TopLeft>=18&&pill.CornerRadius.TopLeft>=10,"guide card and suppress button render rounded corners");
+                check(guideCard.CornerRadius.TopLeft==14&&buttonSurface.CornerRadius.TopLeft==8,"classic guide card has a matching rounded suppress button");
                 check(!guide.DismissAt(center,canvas)&&guide.IsVisible,"clicking highlighted capsule area does not dismiss guide");
-                SaveGuidePreview(widget,guide,host,guideRect,guideScale);
+                int guideInset=(int)Math.Round(8*scale);
+                var edgeHost=WidgetWindow.ClampHostBounds(guideRect.Left-100,guideRect.Top-100,
+                    host.Right-host.Left,host.Bottom-host.Top,guideRect,guideInset);
+                Native.SetWindowPos(handle,IntPtr.Zero,edgeHost.Left,edgeHost.Top,0,0,0x0015);
+                widget.Poll(); Pump(80);
+                var edgeArrow=guide.Layout.Arrow.Bounds;
+                check(Math.Abs(guide.Layout.Hole.Left+7)<1&&Math.Abs(guide.Layout.Hole.Top+7)<1&&Math.Abs(edgeArrow.Width-10)<0.01&&
+                    edgeArrow.Top>guide.Layout.Hole.Bottom,"edge drag keeps the full capsule on screen and places the straight arrow below it");
+                SaveGuidePreview(widget,guide,edgeHost,guideRect,guideScale);
+                Native.SetWindowPos(handle,IntPtr.Zero,host.Left,host.Top,0,0,0x0015);
+                widget.Poll();
                 Pump(5400); widget.Poll();
                 check(guide.IsVisible&&widget.IsVisible,"spotlight stays visible beyond former five-second timeout");
                 Native.RECT after; Native.GetWindowRect(handle,out after);
@@ -415,7 +432,7 @@ namespace DesktopSwitcher
             focus.Intersect(new Rect(size));
             int x=(int)Math.Floor(focus.Left),y=(int)Math.Floor(focus.Top);
             var crop=new Int32Rect(x,y,(int)Math.Ceiling(focus.Right)-x,(int)Math.Ceiling(focus.Bottom)-y);
-            Save(new CroppedBitmap(bitmap,crop),"spotlight-v1.4.1.png");
+            Save(new CroppedBitmap(bitmap,crop),"spotlight-v1.4.5.png");
         }
         private static RenderTargetBitmap Capture(FrameworkElement element)
         {

@@ -34,10 +34,10 @@ Requires Windows 10 / 11 virtual desktops and .NET Framework 4.8. Slideshow reco
 Uses the locally installed Microsoft .NET Framework compiler, with no dependency downloads.
 
 ```powershell
-.\Build.ps1 -OutputDirectory releases\1.4.1\portable
+.\Build.ps1 -OutputDirectory releases\1.4.5\portable
 .\build\qa\Tests.exe
 node .\tests\WebsiteCheck.mjs
-.\tests\FullProductCheck.ps1 -Version 1.4.1
+.\tests\FullProductCheck.ps1 -Version 1.4.5
 .\Package.ps1
 ```
 

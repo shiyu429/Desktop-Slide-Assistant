@@ -36,7 +36,7 @@
 使用本机已有的微软 .NET Framework 编译器，不下载依赖。在项目目录运行 PowerShell：
 
 ```powershell
-.\Build.ps1 -OutputDirectory releases\1.4.1\portable
+.\Build.ps1 -OutputDirectory releases\1.4.5\portable
 .\build\qa\Tests.exe
 node .\tests\WebsiteCheck.mjs
 .\Package.ps1
@@ -45,7 +45,7 @@ node .\tests\WebsiteCheck.mjs
 真实产品退出回归（使用隔离配置，不改普通设置）：
 
 ```powershell
-.\tests\FullProductCheck.ps1 -Version 1.4.1
+.\tests\FullProductCheck.ps1 -Version 1.4.5
 ```
 
 ## 项目结构
